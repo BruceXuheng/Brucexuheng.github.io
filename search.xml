@@ -4,11 +4,36 @@
   
     
     <entry>
+      <title>Kotlin Exception Handling</title>
+      <link href="/2023/08/08/Kotlin-Exception-Handling/"/>
+      <url>/2023/08/08/Kotlin-Exception-Handling/</url>
+      
+        <content type="html"><![CDATA[<h3 id="1-普通处理异常"><a href="#1-普通处理异常" class="headerlink" title="1. 普通处理异常"></a>1. 普通处理异常</h3><blockquote><p>这种是普通的写法，明了的处理异常<br>Kotlin也支持多个catch捕获</p></blockquote><figure class="highlight kotlin"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br></pre></td><td class="code"><pre><span class="line"></span><br><span class="line"><span class="keyword">try</span> &#123;</span><br><span class="line">    <span class="keyword">throw</span> Throwable(<span class="string">&quot;Diy Exception&quot;</span>)</span><br><span class="line">&#125;</span><br><span class="line"><span class="keyword">catch</span> (e: Exception) &#123;</span><br><span class="line">    print(<span class="string">&quot;Exception-&gt; <span class="subst">$&#123;e.message&#125;</span>&quot;</span>)</span><br><span class="line">&#125;</span><br><span class="line"><span class="keyword">finally</span> &#123;</span><br><span class="line">    print(<span class="string">&quot;finally&quot;</span>)</span><br><span class="line">&#125;</span><br><span class="line"></span><br></pre></td></tr></table></figure><h3 id="2-inline模式处理异常"><a href="#2-inline模式处理异常" class="headerlink" title="2. inline模式处理异常"></a>2. inline模式处理异常</h3><blockquote><p>封装处理不会导致程序异常终止, 易于使用, 提供代码质量和开发效率<br>吐槽一点 kotlin 不支持异常检查很不好, 需要人去识别可能出现的各种异常, 在对接各类功能接口很容易被忽略异常</p></blockquote><figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br></pre></td><td class="code"><pre><span class="line">fun main() &#123;</span><br><span class="line">    var p = Person()</span><br><span class="line">    p.name = null</span><br><span class="line">    nameCatch(action = &#123;</span><br><span class="line">        val n: String = p.name ?: fail(&quot;name is null&quot;)</span><br><span class="line">    &#125;, exceptionFinally = &#123;</span><br><span class="line">        print(&quot;exceptionFinally&quot;)</span><br><span class="line">    &#125;)</span><br><span class="line">    print(&quot;================&quot;)</span><br><span class="line">    print(5)</span><br><span class="line">    print(&quot;================&quot;)</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"></span><br><span class="line">inline fun nameCatch(action: () -&gt; Unit, exceptionFinally: () -&gt; Unit) &#123;</span><br><span class="line">    try &#123;</span><br><span class="line">        action()</span><br><span class="line">    &#125; catch (e: Exception) &#123;</span><br><span class="line">        print(&quot;inline try catch -&gt; $&#123;e.message&#125;&quot;)</span><br><span class="line">    &#125; finally &#123;</span><br><span class="line">        exceptionFinally()</span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br><span class="line"></span><br></pre></td></tr></table></figure>]]></content>
+      
+      
+      <categories>
+          
+          <category> Kotlin </category>
+          
+      </categories>
+      
+      
+        <tags>
+            
+            <tag> Kotlin </tag>
+            
+        </tags>
+      
+    </entry>
+    
+    
+    
+    <entry>
       <title>Flutter 记录</title>
       <link href="/2023/06/25/Flutter-%E8%AE%B0%E5%BD%95/"/>
       <url>/2023/06/25/Flutter-%E8%AE%B0%E5%BD%95/</url>
       
-        <content type="html"><![CDATA[]]></content>
+        <content type="html"><![CDATA[<p>check 环境</p><figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">flutter doctor</span><br></pre></td></tr></table></figure><p>同意 Android 协议</p><figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">flutter doctor --android-licenses</span><br></pre></td></tr></table></figure>]]></content>
       
       
       <categories>
