@@ -4,6 +4,19 @@
   
     
     <entry>
+      <title>思考-写怎样的代码看着舒服(Java/Kotlin)</title>
+      <link href="/2023/08/31/%E6%80%9D%E8%80%83-%E5%86%99%E6%80%8E%E6%A0%B7%E7%9A%84%E4%BB%A3%E7%A0%81%E7%9C%8B%E7%9D%80%E8%88%92%E6%9C%8D/"/>
+      <url>/2023/08/31/%E6%80%9D%E8%80%83-%E5%86%99%E6%80%8E%E6%A0%B7%E7%9A%84%E4%BB%A3%E7%A0%81%E7%9C%8B%E7%9D%80%E8%88%92%E6%9C%8D/</url>
+      
+        <content type="html"><![CDATA[<p>看整齐条理的类文件代码 真的会少几条皱纹 </p><p>在想写怎么样的代码会舒服</p><p>深思熟虑问过各家AI后进行整合编码约定</p><p>目前对应代码量比较多的是Java\Kotlin, 算是阅读量和编写量最多的语言, 汇总如下</p><h2 id="Java-Class-Layout"><a href="#Java-Class-Layout" class="headerlink" title="Java Class Layout"></a>Java Class Layout</h2><p>属性变量</p><ol><li>静态&#x2F;常量变量</li><li>私有&#x2F;公共成员变量（非静态变量）<br>构造</li><li>构造方法<br>方法</li><li>单例方法（如果有）</li><li>公共&#x2F;私有方法(非静态)</li><li>静态方法<br>内部类</li><li>静态&#x2F;内部类（如果有）</li></ol><h2 id="Kotlin-Class-Layout"><a href="#Kotlin-Class-Layout" class="headerlink" title="Kotlin Class Layout"></a>Kotlin Class Layout</h2><blockquote><p><a href="https://kotlinlang.org/docs/coding-conventions.html#class-layout">https://kotlinlang.org/docs/coding-conventions.html#class-layout</a></p></blockquote><ol><li><p>Property declarations and initializer blocks<br>属性声明和初始值设定项块</p></li><li><p>Secondary constructors<br>辅助构造函数</p></li><li><p>Method declarations<br>方法声明</p></li><li><p>Companion object<br>伴随对象</p></li></ol>]]></content>
+      
+      
+      
+    </entry>
+    
+    
+    
+    <entry>
       <title>Kotlin Exception Handling</title>
       <link href="/2023/08/08/Kotlin-Exception-Handling/"/>
       <url>/2023/08/08/Kotlin-Exception-Handling/</url>
