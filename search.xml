@@ -46,137 +46,6 @@ mainjava -jniLibs 	--arm64-v8a  		---libbrencrypt.so 	--armeabi-v7a  		---libbre
       </tags>
   </entry>
   <entry>
-    <title>Android系统进程-思维构建</title>
-    <url>/2024/08/26/Android%E7%B3%BB%E7%BB%9F%E8%BF%9B%E7%A8%8B-%E6%80%9D%E7%BB%B4%E6%9E%84%E5%BB%BA/</url>
-    <content><![CDATA[init进程概述init进程并非鼻祖进程, 真正的鼻祖是进程id为0的 swapper进程(idele进程).
-init的进程(pid&#x3D;1), 是Android用户空间所有进程的鼻祖, 还有一个兄弟进程kthread进程(pid&#x3D;2), 是Android内核空间所有进程的鼻祖.
-init会 fork&#x2F;clone 多个子进程, vold\adbd\lmkd\logd\surfaceflinger\servicemanager\zygote(systemserver(AMS&#x2F;WMS&#x2F;PMS)&#x2F;launcher&#x2F;phone&#x2F;camera)
-surfaceflinger进程作用是：把多个来源的图像数据，如需合成则进行合成 否则直接提交给display驱动进行显示
-
-lmkd进程 Low Memory Killer Daemon低内存杀手守护进程, 查杀进程的。会监控内存的使用情况，当达到一定阀值的时候，会去杀掉一些处于后台的、优先级低的、占用内存高的进程, 是一个守护进程，会在后台默默的为内存的健康保驾护航.
-
-logdlog功能
-
-servicemanager进程为binder通信服务的，负责整个Android系统的binder通信 ，所以 需要提前启动
-
-zygote进程init进程直接创建的子进程中唯一可以运行java代码的进程
-
-进程启动选用脚本语言定义创建子进程以及顺序,后缀.rc, 可定义子进程基础信息、触发条件、前置命令、创建命令，需要用init脚本语言来配置创建子进程的步骤如下1. 首先 子进程在以.rc的脚本文件中，使用service关键字来配置子进程相关的信息2. 其次 在init.rc文件中（init.rc文件到底是在哪个目录这个是不确定的）使用import关键字引入脚本文件，使用on关键字来配置子进程的触发条件，3. 触发条件配置完毕后，如若子进程在创建之前需要配置一些前置操作或命令，则基于触发条件下配置这些信息4. 最后 使用start关键字来配置创建子进程的命令。子进程的基础信息会被解析到Service实例中，所有的Service实例会存放到ServiceList对象中。触发条件和它包含的命令会被解析到Action实例中，所有的Action实例会存放到ActionManager对象中.
-
-小计子进程的善后都需要创建进程的处理,1. 首先我先使用sigaction函数来注册SIGCHLD信号，这样就可以监听到子进程的状态了2. 其次使用signalfd函数为SIGCHLD信号生成一个fd（文件描述符）3. 再次使用epoll来见监听上一步生成的fd是否有可读数据4. 如监听到fd上有可读数据，则证明子进程的状态发生了变化，还需要使用waitpid函数来获取是哪个子进程死掉了
-
-servicemanagerzygotesystemserver进程ActivityManagerServiceWindowManagerServiceInputManagerServicePackageManagerServicesurfaceflinger进程四大组件binderhandler窗口ui绘制事件分发类加载机制]]></content>
-      <categories>
-        <category>Android</category>
-      </categories>
-      <tags>
-        <tag>Android</tag>
-      </tags>
-  </entry>
-  <entry>
-    <title>Flutter-Widget/Element/RenderObject-三树关系深度解析</title>
-    <url>/2026/08/03/Flutter-Widget-Element-RenderObject-%E4%B8%89%E6%A0%91%E5%85%B3%E7%B3%BB%E6%B7%B1%E5%BA%A6%E8%A7%A3%E6%9E%90/</url>
-    <content><![CDATA[Flutter Widget&#x2F;Element&#x2F;RenderObject 三树关系深度解析
-源码路径：packages/flutter/lib/src/widgets/framework.dart
-
-一、三树模型概述Flutter 的核心架构基于三棵树：
-
-Widget Tree：配置层，不可变、轻量，描述”应该是什么样子”
-Element Tree：状态层，可变、持久，管理 Widget 和 RenderObject 的对应关系
-RenderObject Tree：渲染层，负责布局、绘制和命中测试
-
-flowchart LR    subgraph &quot;Widget Tree 配置&quot;        W1[&quot;StatelessWidget&quot;] --&gt; W2[&quot;Container&quot;]        W1 --&gt; W3[&quot;Text&quot;]    end    subgraph &quot;Element Tree 状态&quot;        E1[&quot;StatelessElement&quot;] --&gt; E2[&quot;SingleChildRenderObjectElement&quot;]        E1 --&gt; E3[&quot;LeafRenderObjectElement&quot;]    end    subgraph &quot;RenderObject Tree 渲染&quot;        R1[&quot;RenderPadding&quot;] --&gt; R2[&quot;RenderParagraph&quot;]    end    W1 -.-&gt;|createElement| E1    W2 -.-&gt;|createElement| E2    W3 -.-&gt;|createElement| E3    E2 -.-&gt;|renderObject| R1    E3 -.-&gt;|renderObject| R2
-
-
-二、Widget 核心类层次classDiagram    class Widget &#123;        &lt;&lt;abstract&gt;&gt;        +key : Key?        +createElement() Element        +canUpdate(old, new) bool static    &#125;    class StatelessWidget &#123;        +build(context) Widget        +createElement() StatelessElement    &#125;    class StatefulWidget &#123;        +createState() State        +createElement() StatefulElement    &#125;    class ProxyWidget &#123;        +child : Widget    &#125;    class RenderObjectWidget &#123;        +createRenderObject() RenderObject        +updateRenderObject()        +didUnmountRenderObject()        +createElement() RenderObjectElement    &#125;    class LeafRenderObjectWidget &#123;        +createElement() LeafRenderObjectElement    &#125;    class SingleChildRenderObjectWidget &#123;        +child : Widget?        +createElement() SingleChildRenderObjectElement    &#125;    class MultiChildRenderObjectWidget &#123;        +children : List~Widget~        +createElement() MultiChildRenderObjectElement    &#125;    Widget &lt;|-- StatelessWidget    Widget &lt;|-- StatefulWidget    Widget &lt;|-- ProxyWidget    Widget &lt;|-- RenderObjectWidget    RenderObjectWidget &lt;|-- LeafRenderObjectWidget    RenderObjectWidget &lt;|-- SingleChildRenderObjectWidget    RenderObjectWidget &lt;|-- MultiChildRenderObjectWidget    ProxyWidget &lt;|-- InheritedWidget    ProxyWidget &lt;|-- ParentDataWidget
-
-Widget.canUpdate — Diff 算法核心// L432: 决定是否可复用旧 Elementstatic bool canUpdate(Widget oldWidget, Widget newWidget) &#123;  return oldWidget.runtimeType == newWidget.runtimeType      &amp;&amp; oldWidget.key == newWidget.key;&#125;
-
-canUpdate 返回 true → 复用旧 Element，调用 element.update(newWidget)canUpdate 返回 false → 旧 Element 卸载，创建新 Element
-
-三、Element 核心类层次与生命周期classDiagram    class Element &#123;        &lt;&lt;abstract&gt;&gt;        +widget : Widget        +depth : int        +owner : BuildOwner        +slot : dynamic        +mount(parent, slot)        +update(newWidget)        +deactivate()        +unmount()        +findAncestorRenderObjectElement()    &#125;    class ComponentElement &#123;        +_child : Element?        +performRebuild()        +mount() rebuild    &#125;    class StatelessElement &#123;        +build() widget.build(this)    &#125;    class StatefulElement &#123;        +_state : State        +build() state.build(this)        +mount() state.initState()        +update() state.didUpdateWidget()        +deactivate() state.deactivate()        +unmount() state.dispose()    &#125;    class RenderObjectElement &#123;        +renderObject : RenderObject        +mount() createRenderObject + attachRenderObject        +update() updateRenderObject        +deactivate() detachRenderObject        +unmount() didUnmountRenderObject    &#125;    class LeafRenderObjectElement    class SingleChildRenderObjectElement    class MultiChildRenderObjectElement    Element &lt;|-- ComponentElement    Element &lt;|-- RenderObjectElement    ComponentElement &lt;|-- StatelessElement    ComponentElement &lt;|-- StatefulElement    RenderObjectElement &lt;|-- LeafRenderObjectElement    RenderObjectElement &lt;|-- SingleChildRenderObjectElement    RenderObjectElement &lt;|-- MultiChildRenderObjectElement
-
-Element 生命周期状态机stateDiagram-v2    [*] --&gt; initial : createElement()    initial --&gt; active : mount(parent, slot)    active --&gt; active : update(newWidget)    active --&gt; inactive : deactivate()    inactive --&gt; active : activate() GlobalKey复用    inactive --&gt; defunct : unmount()    defunct --&gt; [*]
-
-
-四、updateChild — 三树更新的核心调度updateChild 是 Element 更新子节点的核心方法，根据 Widget.canUpdate 的结果决定子 Element 的命运：
-flowchart TD    A[&quot;updateChild(child, newWidget, newSlot)&quot;] --&gt; B&#123;&quot;newWidget == null?&quot;&#125;    B --&gt;|是| C&#123;&quot;child != null?&quot;&#125;    C --&gt;|是| D[&quot;deactivateChild(child)&lt;br/&gt;子树卸载&quot;]    C --&gt;|否| E[&quot;return null 无操作&quot;]    B --&gt;|否| F&#123;&quot;child != null?&quot;&#125;    F --&gt;|是| G&#123;&quot;Widget.canUpdate?&lt;br/&gt;runtimeType+key 相同?&quot;&#125;    G --&gt;|是| H[&quot;child.update(newWidget)&lt;br/&gt;复用 Element&quot;]    G --&gt;|否| I[&quot;newChild = inflateWidget&lt;br/&gt;deactivateChild(old)&quot;]    F --&gt;|否| J[&quot;newChild = inflateWidget&lt;br/&gt;创建新 Element&quot;]    H --&gt; K[&quot;return child&quot;]    I --&gt; K    J --&gt; K
-
-核心代码// L3982: updateChild — 子 Element 更新调度Element? updateChild(Element? child, Widget? newWidget, dynamic newSlot) &#123;  if (newWidget == null) &#123;    if (child != null) deactivateChild(child);    return null;  &#125;  if (child != null) &#123;    if (Widget.canUpdate(child.widget, newWidget)) &#123;      child.update(newWidget);  // 复用      return child;    &#125;    deactivateChild(child);     // 卸载旧  &#125;  return inflateWidget(newWidget, newSlot);  // 创建新&#125;
-
-
-五、Element.mount 挂载流程flowchart TD    A[&quot;mount(parent, newSlot)&quot;] --&gt; A1[&quot;_parent = parent&quot;]    A1 --&gt; A2[&quot;_slot = newSlot&quot;]    A2 --&gt; A3[&quot;depth = parent.depth + 1&quot;]    A3 --&gt; A4[&quot;_owner = parent.owner&quot;]    A4 --&gt; A5[&quot;parent.updateChild(this, widget, slot)&quot;]
-
-ComponentElement.mountflowchart TD    B1[&quot;super.mount()&quot;] --&gt; B2[&quot;rebuild() → performRebuild()&quot;]    B2 --&gt; B3[&quot;StatelessElement: widget.build(this)&quot;]    B2 --&gt; B4[&quot;StatefulElement: state.initState() → state.build()&quot;]
-
-RenderObjectElement.mountflowchart TD    C1[&quot;super.mount()&quot;] --&gt; C2[&quot;_renderObject = widget.createRenderObject()&quot;]    C2 --&gt; C3[&quot;attachRenderObject(newSlot)&quot;]    C3 --&gt; C4[&quot;renderObject.attach(owner)&quot;]
-
-
-六、RenderObjectElement 与 RenderObject 的桥接flowchart TD    A[&quot;RenderObjectElement.mount()&quot;] --&gt; B[&quot;widget.createRenderObject(this)&quot;]    B --&gt; C[&quot;renderObject = 新 RenderObject&quot;]    C --&gt; D[&quot;attachRenderObject(newSlot)&quot;]    D --&gt; E[&quot;renderObject.attach(owner.pipelineOwner)&quot;]    F[&quot;RenderObjectElement.update(newWidget)&quot;] --&gt; G[&quot;super.update()&quot;]    G --&gt; H[&quot;widget.updateRenderObject(this, renderObject)&quot;]    I[&quot;RenderObjectElement.unmount()&quot;] --&gt; J[&quot;widget.didUnmountRenderObject(renderObject)&quot;]    J --&gt; K[&quot;renderObject.detach()&quot;]    K --&gt; L[&quot;owner.releaseRenderObject(renderObject)&quot;]
-
-
-七、BuildOwner 构建管理flowchart TD    A[&quot;BuildOwner&quot;] --&gt; B[&quot;_dirtyElements : List~Element~&quot;]    A --&gt; C[&quot;_globalKeyRegistry : Map~Key, Element~&quot;]    D[&quot;onBuildScheduled()&quot;] --&gt; E[&quot;ensureVisualUpdate()&quot;]    F[&quot;buildScope(context, callback)&quot;] --&gt; G[&quot;排序 _dirtyElements depth升序&quot;]    G --&gt; H[&quot;遍历 dirty Elements&quot;]    H --&gt; I[&quot;element.rebuild() → performRebuild()&quot;]    I --&gt; J[&quot;finalizeTree() → unmount 不可恢复的 Elements&quot;]
-
-
-八、完整帧构建流程flowchart TD    A[&quot;BuildOwner.buildScope()&quot;] --&gt; B[&quot;按 depth 升序排序 dirty Elements&quot;]    B --&gt; C[&quot;遍历每个 dirty Element&quot;]    C --&gt; D[&quot;element.rebuild()&quot;]    D --&gt; E[&quot;ComponentElement.performRebuild()&quot;]    E --&gt; F[&quot;built = build()&quot;]    F --&gt; G[&quot;updateChild(_child, built, slot)&quot;]    G --&gt; H&#123;&quot;Widget.canUpdate?&quot;&#125;    H --&gt;|复用| I[&quot;child.update(newWidget)&quot;]    H --&gt;|新建| J[&quot;inflateWidget → createElement → mount&quot;]    H --&gt;|卸载| K[&quot;deactivateChild → deactivate → unmount&quot;]    J --&gt; L[&quot;RenderObjectElement.mount&quot;]    L --&gt; M[&quot;createRenderObject → attachRenderObject&quot;]    I --&gt; N[&quot;RenderObjectElement.update&quot;]    N --&gt; O[&quot;updateRenderObject → markNeedsLayout/markNeedsPaint&quot;]
-
-
-九、StatefulElement 与 State 的交互flowchart TD    A[&quot;StatefulElement.mount()&quot;] --&gt; A1[&quot;super.mount()&quot;]    A1 --&gt; A2[&quot;_state = widget.createState()&quot;]    A2 --&gt; A3[&quot;_state._element = this&quot;]    A3 --&gt; A4[&quot;_state.initState()&quot;]    A4 --&gt; A5[&quot;rebuild() → _state.build()&quot;]    B[&quot;StatefulElement.update(newWidget)&quot;] --&gt; B1[&quot;_state.didUpdateWidget(oldWidget)&quot;]    B1 --&gt; B2[&quot;rebuild() → _state.build()&quot;]    C[&quot;setState(callback)&quot;] --&gt; C1[&quot;_element.markNeedsBuild()&quot;]    C1 --&gt; C2[&quot;BuildOwner.scheduleBuildFor(_element)&quot;]    C2 --&gt; C3[&quot;下一帧 buildScope → rebuild&quot;]    D[&quot;StatefulElement.deactivate()&quot;] --&gt; D1[&quot;_state.deactivate()&quot;]    E[&quot;StatefulElement.unmount()&quot;] --&gt; E1[&quot;_state.dispose()&quot;]
-
-
-十、关键调用链总结
-
-
-场景
-调用链
-
-
-
-首次构建
-mount() → rebuild() → build() → updateChild(null, built, slot) → inflateWidget() → createElement() → child.mount()
-
-
-Widget 更新
-markNeedsBuild() → buildScope() → rebuild() → build() → updateChild(old, built, slot) → canUpdate? update&#x2F;inflate
-
-
-Widget 替换
-canUpdate = false → deactivateChild() → inflateWidget() → 旧 Element deactivate → 新 Element mount
-
-
-State 更新
-setState() → markNeedsBuild() → 下一帧 rebuild() → build()
-
-
-Element 卸载
-deactivate() → 移入 _inactiveElements → unmount() → RenderObjectElement.unmount() → detachRenderObject()
-
-
-GlobalKey 复用
-inflateWidget() → globalKeyRegistry 查找 → 旧 Element deactivate → activate() 复用
-
-
-]]></content>
-      <categories>
-        <category>Flutter</category>
-      </categories>
-      <tags>
-        <tag>Flutter</tag>
-      </tags>
-  </entry>
-  <entry>
-    <title>Android Scrcpy Frp 远程操控/调试Android手机</title>
-    <url>/2023/06/25/Android-Scrcpy-Frp-%E8%BF%9C%E7%A8%8B%E6%93%8D%E6%8E%A7-%E8%B0%83%E8%AF%95Android%E6%89%8B%E6%9C%BA/</url>
-    <content><![CDATA[1. 安装msys2https://www.msys2.org/2. 安装环境参考文档https://blog.csdn.net/u012787710/article/details/130430216pacman -S mingw-w64-x86_64-SDL2pacman -S mingw-w64-x86_64-ffmpegpacman -S mingw-w64-x86_64-libusbpacman -S mingw-w64-x86_64-makepacman -S mingw-w64-x86_64-pkg-configpacman -S mingw-w64-x86_64-meson3.pwdgit clone https://github.com/Genymobile/scrcpy.git4.# 进入代码仓cd./ scrcpy/# 编译scrcpy-server 如果慢 跳过 下载编译好的 https://github.com/Genymobile/scrcpy/releases/tag/v2.0./server/scripts/build-wrapper.sh &quot;server&quot; &quot;server/scrcpy-server&quot; &quot;release&quot;# 我放入了 scrcpy-server	scrcpy\server\scrcpy-server# 编译Scrcpy.exemeson x --buildtype release --strip -Db_lto=true -Dprebuilt_server=./server/scrcpy-server-v2.0ninja.exe -Cx./run x---&gt;ERROR: Command not found: [adb], [start-server]---&gt;解: 放入代码仓根目录 adb.exe AdbWinApi.dll AdbWinUsbApi.dll]]></content>
-      <categories>
-        <category>Android</category>
-      </categories>
-      <tags>
-        <tag>Android</tag>
-        <tag>Debug</tag>
-      </tags>
-  </entry>
-  <entry>
     <title>Flutter Binding 机制深度解析</title>
     <url>/2026/08/03/Flutter-Binding-%E6%9C%BA%E5%88%B6%E6%B7%B1%E5%BA%A6%E8%A7%A3%E6%9E%90/</url>
     <content><![CDATA[
@@ -244,6 +113,46 @@ lockEvents(cb) → _lockCount++ → cb() → _lockCount-- → unlocked()
       </categories>
       <tags>
         <tag>Flutter</tag>
+      </tags>
+  </entry>
+  <entry>
+    <title>Android系统进程-思维构建</title>
+    <url>/2024/08/26/Android%E7%B3%BB%E7%BB%9F%E8%BF%9B%E7%A8%8B-%E6%80%9D%E7%BB%B4%E6%9E%84%E5%BB%BA/</url>
+    <content><![CDATA[init进程概述init进程并非鼻祖进程, 真正的鼻祖是进程id为0的 swapper进程(idele进程).
+init的进程(pid&#x3D;1), 是Android用户空间所有进程的鼻祖, 还有一个兄弟进程kthread进程(pid&#x3D;2), 是Android内核空间所有进程的鼻祖.
+init会 fork&#x2F;clone 多个子进程, vold\adbd\lmkd\logd\surfaceflinger\servicemanager\zygote(systemserver(AMS&#x2F;WMS&#x2F;PMS)&#x2F;launcher&#x2F;phone&#x2F;camera)
+surfaceflinger进程作用是：把多个来源的图像数据，如需合成则进行合成 否则直接提交给display驱动进行显示
+
+lmkd进程 Low Memory Killer Daemon低内存杀手守护进程, 查杀进程的。会监控内存的使用情况，当达到一定阀值的时候，会去杀掉一些处于后台的、优先级低的、占用内存高的进程, 是一个守护进程，会在后台默默的为内存的健康保驾护航.
+
+logdlog功能
+
+servicemanager进程为binder通信服务的，负责整个Android系统的binder通信 ，所以 需要提前启动
+
+zygote进程init进程直接创建的子进程中唯一可以运行java代码的进程
+
+进程启动选用脚本语言定义创建子进程以及顺序,后缀.rc, 可定义子进程基础信息、触发条件、前置命令、创建命令，需要用init脚本语言来配置创建子进程的步骤如下1. 首先 子进程在以.rc的脚本文件中，使用service关键字来配置子进程相关的信息2. 其次 在init.rc文件中（init.rc文件到底是在哪个目录这个是不确定的）使用import关键字引入脚本文件，使用on关键字来配置子进程的触发条件，3. 触发条件配置完毕后，如若子进程在创建之前需要配置一些前置操作或命令，则基于触发条件下配置这些信息4. 最后 使用start关键字来配置创建子进程的命令。子进程的基础信息会被解析到Service实例中，所有的Service实例会存放到ServiceList对象中。触发条件和它包含的命令会被解析到Action实例中，所有的Action实例会存放到ActionManager对象中.
+
+小计子进程的善后都需要创建进程的处理,1. 首先我先使用sigaction函数来注册SIGCHLD信号，这样就可以监听到子进程的状态了2. 其次使用signalfd函数为SIGCHLD信号生成一个fd（文件描述符）3. 再次使用epoll来见监听上一步生成的fd是否有可读数据4. 如监听到fd上有可读数据，则证明子进程的状态发生了变化，还需要使用waitpid函数来获取是哪个子进程死掉了
+
+servicemanagerzygotesystemserver进程ActivityManagerServiceWindowManagerServiceInputManagerServicePackageManagerServicesurfaceflinger进程四大组件binderhandler窗口ui绘制事件分发类加载机制]]></content>
+      <categories>
+        <category>Android</category>
+      </categories>
+      <tags>
+        <tag>Android</tag>
+      </tags>
+  </entry>
+  <entry>
+    <title>Android Scrcpy Frp 远程操控/调试Android手机</title>
+    <url>/2023/06/25/Android-Scrcpy-Frp-%E8%BF%9C%E7%A8%8B%E6%93%8D%E6%8E%A7-%E8%B0%83%E8%AF%95Android%E6%89%8B%E6%9C%BA/</url>
+    <content><![CDATA[1. 安装msys2https://www.msys2.org/2. 安装环境参考文档https://blog.csdn.net/u012787710/article/details/130430216pacman -S mingw-w64-x86_64-SDL2pacman -S mingw-w64-x86_64-ffmpegpacman -S mingw-w64-x86_64-libusbpacman -S mingw-w64-x86_64-makepacman -S mingw-w64-x86_64-pkg-configpacman -S mingw-w64-x86_64-meson3.pwdgit clone https://github.com/Genymobile/scrcpy.git4.# 进入代码仓cd./ scrcpy/# 编译scrcpy-server 如果慢 跳过 下载编译好的 https://github.com/Genymobile/scrcpy/releases/tag/v2.0./server/scripts/build-wrapper.sh &quot;server&quot; &quot;server/scrcpy-server&quot; &quot;release&quot;# 我放入了 scrcpy-server	scrcpy\server\scrcpy-server# 编译Scrcpy.exemeson x --buildtype release --strip -Db_lto=true -Dprebuilt_server=./server/scrcpy-server-v2.0ninja.exe -Cx./run x---&gt;ERROR: Command not found: [adb], [start-server]---&gt;解: 放入代码仓根目录 adb.exe AdbWinApi.dll AdbWinUsbApi.dll]]></content>
+      <categories>
+        <category>Android</category>
+      </categories>
+      <tags>
+        <tag>Android</tag>
+        <tag>Debug</tag>
       </tags>
   </entry>
   <entry>
@@ -372,23 +281,199 @@ flutter doctor --android-licenses]]></content>
       </tags>
   </entry>
   <entry>
-    <title>Kotlin Exception Handling</title>
-    <url>/2023/08/08/Kotlin-Exception-Handling/</url>
-    <content><![CDATA[1. 普通处理异常
-这种是普通的写法，明了的处理异常Kotlin也支持多个catch捕获
+    <title>Flutter-Widget/Element/RenderObject-三树关系深度解析</title>
+    <url>/2026/08/03/Flutter-Widget-Element-RenderObject-%E4%B8%89%E6%A0%91%E5%85%B3%E7%B3%BB%E6%B7%B1%E5%BA%A6%E8%A7%A3%E6%9E%90/</url>
+    <content><![CDATA[Flutter Widget&#x2F;Element&#x2F;RenderObject 三树关系深度解析
+源码路径：packages/flutter/lib/src/widgets/framework.dart
 
-try &#123;    throw Throwable(&quot;Diy Exception&quot;)&#125;catch (e: Exception) &#123;    print(&quot;Exception-&gt; $&#123;e.message&#125;&quot;)&#125;finally &#123;    print(&quot;finally&quot;)&#125;
+一、三树模型概述Flutter 的核心架构基于三棵树：
 
-2. inline模式处理异常
-封装处理不会导致程序异常终止, 易于使用, 提供代码质量和开发效率吐槽一点 kotlin 不支持异常检查很不好, 需要人去识别可能出现的各种异常, 在对接各类功能接口很容易被忽略异常
+Widget Tree：配置层，不可变、轻量，描述”应该是什么样子”
+Element Tree：状态层，可变、持久，管理 Widget 和 RenderObject 的对应关系
+RenderObject Tree：渲染层，负责布局、绘制和命中测试
 
-fun main() &#123;    var p = Person()    p.name = null    nameCatch(action = &#123;        val n: String = p.name ?: fail(&quot;name is null&quot;)    &#125;, exceptionFinally = &#123;        print(&quot;exceptionFinally&quot;)    &#125;)    print(&quot;================&quot;)    print(5)    print(&quot;================&quot;)&#125;inline fun nameCatch(action: () -&gt; Unit, exceptionFinally: () -&gt; Unit) &#123;    try &#123;        action()    &#125; catch (e: Exception) &#123;        print(&quot;inline try catch -&gt; $&#123;e.message&#125;&quot;)    &#125; finally &#123;        exceptionFinally()    &#125;&#125;]]></content>
+flowchart LR    subgraph &quot;Widget Tree 配置&quot;        W1[&quot;StatelessWidget&quot;] --&gt; W2[&quot;Container&quot;]        W1 --&gt; W3[&quot;Text&quot;]    end    subgraph &quot;Element Tree 状态&quot;        E1[&quot;StatelessElement&quot;] --&gt; E2[&quot;SingleChildRenderObjectElement&quot;]        E1 --&gt; E3[&quot;LeafRenderObjectElement&quot;]    end    subgraph &quot;RenderObject Tree 渲染&quot;        R1[&quot;RenderPadding&quot;] --&gt; R2[&quot;RenderParagraph&quot;]    end    W1 -.-&gt;|createElement| E1    W2 -.-&gt;|createElement| E2    W3 -.-&gt;|createElement| E3    E2 -.-&gt;|renderObject| R1    E3 -.-&gt;|renderObject| R2
+
+
+二、Widget 核心类层次classDiagram    class Widget &#123;        &lt;&lt;abstract&gt;&gt;        +key : Key?        +createElement() Element        +canUpdate(old, new) bool static    &#125;    class StatelessWidget &#123;        +build(context) Widget        +createElement() StatelessElement    &#125;    class StatefulWidget &#123;        +createState() State        +createElement() StatefulElement    &#125;    class ProxyWidget &#123;        +child : Widget    &#125;    class RenderObjectWidget &#123;        +createRenderObject() RenderObject        +updateRenderObject()        +didUnmountRenderObject()        +createElement() RenderObjectElement    &#125;    class LeafRenderObjectWidget &#123;        +createElement() LeafRenderObjectElement    &#125;    class SingleChildRenderObjectWidget &#123;        +child : Widget?        +createElement() SingleChildRenderObjectElement    &#125;    class MultiChildRenderObjectWidget &#123;        +children : List~Widget~        +createElement() MultiChildRenderObjectElement    &#125;    Widget &lt;|-- StatelessWidget    Widget &lt;|-- StatefulWidget    Widget &lt;|-- ProxyWidget    Widget &lt;|-- RenderObjectWidget    RenderObjectWidget &lt;|-- LeafRenderObjectWidget    RenderObjectWidget &lt;|-- SingleChildRenderObjectWidget    RenderObjectWidget &lt;|-- MultiChildRenderObjectWidget    ProxyWidget &lt;|-- InheritedWidget    ProxyWidget &lt;|-- ParentDataWidget
+
+Widget.canUpdate — Diff 算法核心// L432: 决定是否可复用旧 Elementstatic bool canUpdate(Widget oldWidget, Widget newWidget) &#123;  return oldWidget.runtimeType == newWidget.runtimeType      &amp;&amp; oldWidget.key == newWidget.key;&#125;
+
+canUpdate 返回 true → 复用旧 Element，调用 element.update(newWidget)canUpdate 返回 false → 旧 Element 卸载，创建新 Element
+
+三、Element 核心类层次与生命周期classDiagram    class Element &#123;        &lt;&lt;abstract&gt;&gt;        +widget : Widget        +depth : int        +owner : BuildOwner        +slot : dynamic        +mount(parent, slot)        +update(newWidget)        +deactivate()        +unmount()        +findAncestorRenderObjectElement()    &#125;    class ComponentElement &#123;        +_child : Element?        +performRebuild()        +mount() rebuild    &#125;    class StatelessElement &#123;        +build() widget.build(this)    &#125;    class StatefulElement &#123;        +_state : State        +build() state.build(this)        +mount() state.initState()        +update() state.didUpdateWidget()        +deactivate() state.deactivate()        +unmount() state.dispose()    &#125;    class RenderObjectElement &#123;        +renderObject : RenderObject        +mount() createRenderObject + attachRenderObject        +update() updateRenderObject        +deactivate() detachRenderObject        +unmount() didUnmountRenderObject    &#125;    class LeafRenderObjectElement    class SingleChildRenderObjectElement    class MultiChildRenderObjectElement    Element &lt;|-- ComponentElement    Element &lt;|-- RenderObjectElement    ComponentElement &lt;|-- StatelessElement    ComponentElement &lt;|-- StatefulElement    RenderObjectElement &lt;|-- LeafRenderObjectElement    RenderObjectElement &lt;|-- SingleChildRenderObjectElement    RenderObjectElement &lt;|-- MultiChildRenderObjectElement
+
+Element 生命周期状态机stateDiagram-v2    [*] --&gt; initial : createElement()    initial --&gt; active : mount(parent, slot)    active --&gt; active : update(newWidget)    active --&gt; inactive : deactivate()    inactive --&gt; active : activate() GlobalKey复用    inactive --&gt; defunct : unmount()    defunct --&gt; [*]
+
+
+四、updateChild — 三树更新的核心调度updateChild 是 Element 更新子节点的核心方法，根据 Widget.canUpdate 的结果决定子 Element 的命运：
+flowchart TD    A[&quot;updateChild(child, newWidget, newSlot)&quot;] --&gt; B&#123;&quot;newWidget == null?&quot;&#125;    B --&gt;|是| C&#123;&quot;child != null?&quot;&#125;    C --&gt;|是| D[&quot;deactivateChild(child)&lt;br/&gt;子树卸载&quot;]    C --&gt;|否| E[&quot;return null 无操作&quot;]    B --&gt;|否| F&#123;&quot;child != null?&quot;&#125;    F --&gt;|是| G&#123;&quot;Widget.canUpdate?&lt;br/&gt;runtimeType+key 相同?&quot;&#125;    G --&gt;|是| H[&quot;child.update(newWidget)&lt;br/&gt;复用 Element&quot;]    G --&gt;|否| I[&quot;newChild = inflateWidget&lt;br/&gt;deactivateChild(old)&quot;]    F --&gt;|否| J[&quot;newChild = inflateWidget&lt;br/&gt;创建新 Element&quot;]    H --&gt; K[&quot;return child&quot;]    I --&gt; K    J --&gt; K
+
+核心代码// L3982: updateChild — 子 Element 更新调度Element? updateChild(Element? child, Widget? newWidget, dynamic newSlot) &#123;  if (newWidget == null) &#123;    if (child != null) deactivateChild(child);    return null;  &#125;  if (child != null) &#123;    if (Widget.canUpdate(child.widget, newWidget)) &#123;      child.update(newWidget);  // 复用      return child;    &#125;    deactivateChild(child);     // 卸载旧  &#125;  return inflateWidget(newWidget, newSlot);  // 创建新&#125;
+
+
+五、Element.mount 挂载流程flowchart TD    A[&quot;mount(parent, newSlot)&quot;] --&gt; A1[&quot;_parent = parent&quot;]    A1 --&gt; A2[&quot;_slot = newSlot&quot;]    A2 --&gt; A3[&quot;depth = parent.depth + 1&quot;]    A3 --&gt; A4[&quot;_owner = parent.owner&quot;]    A4 --&gt; A5[&quot;parent.updateChild(this, widget, slot)&quot;]
+
+ComponentElement.mountflowchart TD    B1[&quot;super.mount()&quot;] --&gt; B2[&quot;rebuild() → performRebuild()&quot;]    B2 --&gt; B3[&quot;StatelessElement: widget.build(this)&quot;]    B2 --&gt; B4[&quot;StatefulElement: state.initState() → state.build()&quot;]
+
+RenderObjectElement.mountflowchart TD    C1[&quot;super.mount()&quot;] --&gt; C2[&quot;_renderObject = widget.createRenderObject()&quot;]    C2 --&gt; C3[&quot;attachRenderObject(newSlot)&quot;]    C3 --&gt; C4[&quot;renderObject.attach(owner)&quot;]
+
+
+六、RenderObjectElement 与 RenderObject 的桥接flowchart TD    A[&quot;RenderObjectElement.mount()&quot;] --&gt; B[&quot;widget.createRenderObject(this)&quot;]    B --&gt; C[&quot;renderObject = 新 RenderObject&quot;]    C --&gt; D[&quot;attachRenderObject(newSlot)&quot;]    D --&gt; E[&quot;renderObject.attach(owner.pipelineOwner)&quot;]    F[&quot;RenderObjectElement.update(newWidget)&quot;] --&gt; G[&quot;super.update()&quot;]    G --&gt; H[&quot;widget.updateRenderObject(this, renderObject)&quot;]    I[&quot;RenderObjectElement.unmount()&quot;] --&gt; J[&quot;widget.didUnmountRenderObject(renderObject)&quot;]    J --&gt; K[&quot;renderObject.detach()&quot;]    K --&gt; L[&quot;owner.releaseRenderObject(renderObject)&quot;]
+
+
+七、BuildOwner 构建管理flowchart TD    A[&quot;BuildOwner&quot;] --&gt; B[&quot;_dirtyElements : List~Element~&quot;]    A --&gt; C[&quot;_globalKeyRegistry : Map~Key, Element~&quot;]    D[&quot;onBuildScheduled()&quot;] --&gt; E[&quot;ensureVisualUpdate()&quot;]    F[&quot;buildScope(context, callback)&quot;] --&gt; G[&quot;排序 _dirtyElements depth升序&quot;]    G --&gt; H[&quot;遍历 dirty Elements&quot;]    H --&gt; I[&quot;element.rebuild() → performRebuild()&quot;]    I --&gt; J[&quot;finalizeTree() → unmount 不可恢复的 Elements&quot;]
+
+
+八、完整帧构建流程flowchart TD    A[&quot;BuildOwner.buildScope()&quot;] --&gt; B[&quot;按 depth 升序排序 dirty Elements&quot;]    B --&gt; C[&quot;遍历每个 dirty Element&quot;]    C --&gt; D[&quot;element.rebuild()&quot;]    D --&gt; E[&quot;ComponentElement.performRebuild()&quot;]    E --&gt; F[&quot;built = build()&quot;]    F --&gt; G[&quot;updateChild(_child, built, slot)&quot;]    G --&gt; H&#123;&quot;Widget.canUpdate?&quot;&#125;    H --&gt;|复用| I[&quot;child.update(newWidget)&quot;]    H --&gt;|新建| J[&quot;inflateWidget → createElement → mount&quot;]    H --&gt;|卸载| K[&quot;deactivateChild → deactivate → unmount&quot;]    J --&gt; L[&quot;RenderObjectElement.mount&quot;]    L --&gt; M[&quot;createRenderObject → attachRenderObject&quot;]    I --&gt; N[&quot;RenderObjectElement.update&quot;]    N --&gt; O[&quot;updateRenderObject → markNeedsLayout/markNeedsPaint&quot;]
+
+
+九、StatefulElement 与 State 的交互flowchart TD    A[&quot;StatefulElement.mount()&quot;] --&gt; A1[&quot;super.mount()&quot;]    A1 --&gt; A2[&quot;_state = widget.createState()&quot;]    A2 --&gt; A3[&quot;_state._element = this&quot;]    A3 --&gt; A4[&quot;_state.initState()&quot;]    A4 --&gt; A5[&quot;rebuild() → _state.build()&quot;]    B[&quot;StatefulElement.update(newWidget)&quot;] --&gt; B1[&quot;_state.didUpdateWidget(oldWidget)&quot;]    B1 --&gt; B2[&quot;rebuild() → _state.build()&quot;]    C[&quot;setState(callback)&quot;] --&gt; C1[&quot;_element.markNeedsBuild()&quot;]    C1 --&gt; C2[&quot;BuildOwner.scheduleBuildFor(_element)&quot;]    C2 --&gt; C3[&quot;下一帧 buildScope → rebuild&quot;]    D[&quot;StatefulElement.deactivate()&quot;] --&gt; D1[&quot;_state.deactivate()&quot;]    E[&quot;StatefulElement.unmount()&quot;] --&gt; E1[&quot;_state.dispose()&quot;]
+
+
+十、关键调用链总结
+
+
+场景
+调用链
+
+
+
+首次构建
+mount() → rebuild() → build() → updateChild(null, built, slot) → inflateWidget() → createElement() → child.mount()
+
+
+Widget 更新
+markNeedsBuild() → buildScope() → rebuild() → build() → updateChild(old, built, slot) → canUpdate? update&#x2F;inflate
+
+
+Widget 替换
+canUpdate = false → deactivateChild() → inflateWidget() → 旧 Element deactivate → 新 Element mount
+
+
+State 更新
+setState() → markNeedsBuild() → 下一帧 rebuild() → build()
+
+
+Element 卸载
+deactivate() → 移入 _inactiveElements → unmount() → RenderObjectElement.unmount() → detachRenderObject()
+
+
+GlobalKey 复用
+inflateWidget() → globalKeyRegistry 查找 → 旧 Element deactivate → activate() 复用
+
+
+]]></content>
       <categories>
-        <category>Kotlin</category>
+        <category>Flutter</category>
       </categories>
       <tags>
-        <tag>Kotlin</tag>
+        <tag>Flutter</tag>
       </tags>
+  </entry>
+  <entry>
+    <title>内存泄漏/内存溢出</title>
+    <url>/2024/11/15/%E5%86%85%E5%AD%98%E6%B3%84%E6%BC%8F-%E5%86%85%E5%AD%98%E6%BA%A2%E5%87%BA/</url>
+    <content><![CDATA[一、内存泄漏 &amp; 内存溢出​	在软件开发与运行过程中，内存管理是一个至关重要的环节。然而，由于各种原因，如程序设计的缺陷或资源管理的不当，可能会导致两种常见的内存问题：内存泄漏（Memory Leak）和内存溢出（Memory Overflow）。各种语言&#x2F;操作系统上预防和解决也有不同方式方案,以下是关于两者概念的详细介绍：
+内存泄漏:​	内存泄漏指程序中已经不再需要使用的内存没有被释放，从而造成内存资源浪费和程序性能下降。其特征是程序使用内存总量持续增加，直到程序崩溃或者系统强制关闭。
+原因：
+
+资源未被正确释放：程序动态分配了内存资源，但没有及时释放，导致内存泄漏。
+垃圾回收机制失效：在使用Java等高级语言编写的程序中，垃圾回收机制负责自动释放不再使用的内存资源。但如果程序员在编写代码时存在逻辑错误，就有可能导致垃圾回收机制失效，进而导致内存泄漏。
+循环引用：在使用面向对象编程语言时，两个对象之间可能会发生相互引用的情况。如果这种引用形成了一个环路，就会导致这些对象永远无法被释放，从而产生内存泄漏。
+
+影响：
+
+系统崩溃：内存泄漏会导致系统可用内存不足，从而造成系统崩溃或者异常退出。
+程序性能下降：内存泄漏会让程序占用更多的内存，导致程序性能下降，响应速度变慢。
+安全问题：黑客可能会利用内存泄漏漏洞实现攻击，比如利用堆栈溢出漏洞进行缓冲区溢出攻击。
+
+检测与避免方法：
+
+使用内存监控工具：Windows Task Manager、Linux top命令、ValgrindAndroid Liko KOOM Leakcanary
+代码审查：通过仔细阅读代码，找出可能导致内存泄漏的逻辑错误，发现和解决问题。
+显式地释放资源：在程序中动态分配了内存后，一定要在不再需要使用这些资源时显式地释放它们。例如，在C语言中使用free函数进行内存释放。
+使用智能指针：C++等语言中提供了智能指针的概念，可以自动管理内存，避免手动释放资源时遗漏。
+避免循环引用：在使用面向对象编程时，尽量避免对象之间相互引用形成环路的情况。如果无法避免，可以使用弱引用等技术来解决。
+
+内存溢出:​	内存溢出是指程序在申请内存时，所需的内存空间超过了系统所分配的内存空间，使得程序无法正常运行.
+原因：
+
+分配的内存过于庞大，在内存池中没有足够的连续空间满足需求。
+内存泄漏：应用程序持续向系统申请内存空间，但没有及时释放，导致内存池被消耗殆尽。
+代码编写问题：如未正确释放已经申请的内存、指针操作错误等。
+操作系统本身限制了进程所能申请的最大内存。
+
+影响：
+​	内存溢出会导致程序崩溃或者无法正常运行，因为它直接涉及到程序的运行空间不足。
+解决办法：
+
+优化代码：避免出现无效的内存分配和内存泄漏。
+使用内存池技术：尽可能地重复利用已经申请的内存空间。
+增大操作系统对程序可用的最大内存限制（前提是操作系统支持）。
+将需要处理的数据划分为更小的块，分批进行处理，这样可以使每个块需要分配的内存量变小。
+
+二、关联&#x2F;区别关系:
+​	内存泄漏会造成内存溢出, 内存泄漏是指程序在申请内存后，无法释放已申请的内存空间，一次内存泄漏危害可以忽略，但内存泄漏堆积起来后果很严重，无论多少内存，迟早会被占光，最终会导致内存溢出。
+区别:
+
+发生时机：内存溢出通常发生在程序运行时，当数据结构的大小超过预设限制或者递归调用栈过深时，就会发生内存溢出。而内存泄漏则是在程序持续运行过程中逐渐累积的，当不再使用的内存没有及时释放时，就会产生泄漏。
+表现方式: 内存溢出会导致程序崩溃或者无法正常运行，因为它直接涉及到程序的运行空间不足。而内存泄漏在初期可能不会对程序产生明显影响，但随着时间的推移，未释放的内存不断累积，最终会导致系统资源耗尽，程序性能下降。
+解决方案: 对于内存溢出，解决方法通常涉及到优化数据结构和算法，减少内存消耗，或者增加系统可用内存。而解决内存泄漏则需要定位泄漏源头，修复代码中的内存管理问题，确保不再使用的内存能够被及时释放。
+
+三、Android内存泄漏场景:1. 非静态内部类&#x2F;匿名内部类造成原因：非静态内部类默认会持有外部类的引用，如果内部类的生命周期超过了外部类，就会造成内存泄漏。
+场景：当Activity销毁后，由于内部类中存在异步耗时任务还在执行，导致Activity实例一直被内部类持有无法被回收，造成内存泄漏。
+public class TestActivity extends AppCompatActivity &#123;    @Override    protected void onCreate(Bundle savedInstanceState) &#123; 		// ... ...                Button.setOnClickListener(new View.OnClickListener() &#123;            @Override            public void onClick(View view) &#123;                new Thread(new Runnable() &#123;                    @Override                    public void run() &#123;                        try &#123;                            // 模拟耗时操作                            Thread.sleep(1000);                        &#125; catch (InterruptedException e) &#123;                            throw new RuntimeException(e);                        &#125;                    &#125;                &#125;).start();            &#125;        &#125;);    &#125;&#125;
+
+解决办法：使用静态内部类，并通过弱引用的方式持有外部类。
+public class TestActivity extends AppCompatActivity &#123;    @Override    protected void onCreate(Bundle savedInstanceState) &#123;        super.onCreate(savedInstanceState);        setContentView(R.layout.activity_test);        Button button = findViewById(R.id.button);        button.setOnClickListener(new View.OnClickListener() &#123;            @Override            public void onClick(View view) &#123;                new Thread(new MyRunnable()).start();            &#125;        &#125;);    &#125;    static class MyRunnable implements Runnable &#123;        @Override        public void run() &#123;            try &#123;                // 模拟耗时操作                Thread.sleep(1000);            &#125; catch (InterruptedException e) &#123;                throw new RuntimeException(e);            &#125;        &#125;    &#125;&#125;
+
+2. 静态成员变量造成的内存泄漏造成原因：静态成员变量的生命周期等于应用程序的生命周期，如果该静态成员引用的变量生命周期小于该静态变量，就会造成内存泄漏。
+场景：静态成员变量持有了一个耗费资源过多的实例（如Activity、Fragment）。
+public class Person &#123;    private static Activity mActivity;    Person(Activity activity) &#123;        mActivity = activity;    &#125;&#125;
+
+解决办法：尽量避免使用Static成员变量引用资源耗费过多的实例，如果必须使用，可以使用Application的Context。这样可以随着应用生命周期创建销毁.
+3. 单例模式造成的内存泄漏造成原因：单例模式由于其具有静态特性，导致其生命周期等于应用程序生命周期，如果单例中持有别的类的实例，就会造成内存泄漏。
+场景：单例模式中持有一个耗费资源过多的实例（如Context）。
+public class SingleInstance &#123;    private static SingleInstance instance;    private Context mContext;    private SingleInstance(Context context) &#123;        this.mContext = context; // 传递的是Activity的context    &#125;    public static SingleInstance getInstance(Context context) &#123;        if (instance == null) &#123;            instance = new SingleInstance(context);        &#125;        return instance;    &#125;&#125;
+
+解决办法：使用Application的Context代替Activity的Context。
+4. Handler造成的内存泄漏造成原因：Handler会持有外部类的对象（如Activity），如果Handler中还有消息没执行完，此时创建Handler的Activity关闭就会造成内存泄漏。
+场景：Activity中通过一个子线程异步请求网络数据，请求成功后更新当前页面。
+public class MainActivity extends AppCompatActivity &#123;    private Handler mHandler = new Handler(Looper.getMainLooper()) &#123;        @Override        public void handleMessage(Message msg) &#123;            // 更新页面        &#125;    &#125;;    // 成功获取到网络数据后更新页面    private void handleData(String data) &#123;        Message message = Message.obtain();        message.obj = data;        mHandler.sendMessage(message);    &#125;&#125;
+
+解决办法：
+
+使用静态内部类+弱引用。
+在Activity销毁时，及时清理消息队列中的消息。
+
+public class MainActivity extends AppCompatActivity &#123;    private static class MyHandler extends Handler &#123;        private final WeakReference&lt;MainActivity&gt; mActivity;        public MyHandler(MainActivity activity) &#123;            mActivity = new WeakReference&lt;&gt;(activity);        &#125;        @Override        public void handleMessage(Message msg) &#123;            MainActivity activity = mActivity.get();            if (activity != null) &#123;                // 更新页面            &#125;        &#125;    &#125;    private MyHandler mHandler;    @Override    protected void onCreate(Bundle savedInstanceState) &#123;        super.onCreate(savedInstanceState);        setContentView(R.layout.activity_main);        mHandler = new MyHandler(this);    &#125;    @Override    protected void onDestroy() &#123;        super.onDestroy();        if (mHandler != null) &#123;            mHandler.removeCallbacksAndMessages(null);        &#125;    &#125;&#125;
+
+5. 资源性对象未关闭造成的内存泄漏造成原因：对于资源性对象（如BroadcastReceiver、EventBus等），在不再使用时，应该立即调用其close()函数将其关闭，然后再置为null。否则会造成内存泄漏。
+场景：Activity中注册了BroadcastReceiver，但在onDestroy方法中没有注销该接收器。
+public class MainActivity extends AppCompatActivity &#123;    private MyReceiver myReceiver;    @Override    protected void onCreate(Bundle savedInstanceState) &#123;        super.onCreate(savedInstanceState);        setContentView(R.layout.activity_main);        myReceiver = new MyReceiver();        registerReceiver(myReceiver, new IntentFilter(&quot;MY_ACTION&quot;));    &#125;    // 假设未重写onDestroy方法&#125;class MyReceiver extends BroadcastReceiver &#123;    @Override    public void onReceive(Context context, Intent intent) &#123;        // 处理广播    &#125;&#125;
+
+解决办法：在onDestroy方法中注销广播接收器。
+@Overrideprotected void onDestroy() &#123;    super.onDestroy();    unregisterReceiver(myReceiver); // 解除注册&#125;
+
+6. 容器中的对象未清理造成的内存泄漏造成原因：在使用集合类（如ArrayList、HashMap等）时，如果集合中的对象不再使用，但没有及时从集合中移除，就会导致这些对象无法被垃圾回收器回收，从而造成内存泄漏。
+场景：在Activity中创建了一个ArrayList来存储一些对象，但在Activity销毁时，没有清空这个ArrayList。
+解决办法：在Activity销毁时，清空集合中的对象，并将其置为null。
+@Overrideprotected void onDestroy() &#123;    super.onDestroy();    if (myList != null) &#123;        myList.clear();        myList = null;    &#125;&#125;
+
+Liko在 OOM 和内存触顶时通过用户无感知 dump 来获取 HPROF 文件，当 App 退出到后台且内存 充足的情况进行分析，裁剪 HPROF 回传进行分析
+KOOM利用系统内核COW(Copy-on-write，写时复制)机制，每次dump内存镜像前先暂停虚拟机，然后fork子进程来执行dump操作，父进程在fork成功后立刻恢复虚拟机运行，整个过程对于父进程来讲总耗时只有几毫秒。内存镜像于闲时进行独立进程单线程本地分析，分析完即删除。
+LeakCanary原理分析
+分为以下几步：
+
+监测Activity 的生命周期的 onDestroy() 的调用。
+当某个 Activity 的 onDestroy() 调用后，便对这个 activity 创建一个带 ReferenceQueue 的弱引用，并且给这个弱引用创建了一个 key 保存在 Set集合 中。
+如果这个 activity 可以被回收，那么弱引用就会被添加到 ReferenceQueue 中。
+等待主线程进入 idle(即空闲)后，通过一次遍历，在 ReferenceQueue 中的弱引用所对应的 key 将从 retainedKeys 中移除，说明其没有内存泄漏。
+如果 activity 没有被回收，先强制进行一次 gc，再来检查，如果 key 还存在 retainedKeys 中，说明 activity 不可回收，同时也说明了出现了内存泄漏。
+发生内存泄露之后，dump内存快照，分析 hprof 文件，找到泄露路径（使用 haha 库分析），发送到通知栏
+
+]]></content>
   </entry>
   <entry>
     <title>Hello World</title>
@@ -1628,107 +1713,18 @@ SDK 大版本升级：盘点 breaking changes、插件和原生工具链，建�
       </tags>
   </entry>
   <entry>
-    <title>内存泄漏/内存溢出</title>
-    <url>/2024/11/15/%E5%86%85%E5%AD%98%E6%B3%84%E6%BC%8F-%E5%86%85%E5%AD%98%E6%BA%A2%E5%87%BA/</url>
-    <content><![CDATA[一、内存泄漏 &amp; 内存溢出​	在软件开发与运行过程中，内存管理是一个至关重要的环节。然而，由于各种原因，如程序设计的缺陷或资源管理的不当，可能会导致两种常见的内存问题：内存泄漏（Memory Leak）和内存溢出（Memory Overflow）。各种语言&#x2F;操作系统上预防和解决也有不同方式方案,以下是关于两者概念的详细介绍：
-内存泄漏:​	内存泄漏指程序中已经不再需要使用的内存没有被释放，从而造成内存资源浪费和程序性能下降。其特征是程序使用内存总量持续增加，直到程序崩溃或者系统强制关闭。
-原因：
-
-资源未被正确释放：程序动态分配了内存资源，但没有及时释放，导致内存泄漏。
-垃圾回收机制失效：在使用Java等高级语言编写的程序中，垃圾回收机制负责自动释放不再使用的内存资源。但如果程序员在编写代码时存在逻辑错误，就有可能导致垃圾回收机制失效，进而导致内存泄漏。
-循环引用：在使用面向对象编程语言时，两个对象之间可能会发生相互引用的情况。如果这种引用形成了一个环路，就会导致这些对象永远无法被释放，从而产生内存泄漏。
-
-影响：
-
-系统崩溃：内存泄漏会导致系统可用内存不足，从而造成系统崩溃或者异常退出。
-程序性能下降：内存泄漏会让程序占用更多的内存，导致程序性能下降，响应速度变慢。
-安全问题：黑客可能会利用内存泄漏漏洞实现攻击，比如利用堆栈溢出漏洞进行缓冲区溢出攻击。
-
-检测与避免方法：
-
-使用内存监控工具：Windows Task Manager、Linux top命令、ValgrindAndroid Liko KOOM Leakcanary
-代码审查：通过仔细阅读代码，找出可能导致内存泄漏的逻辑错误，发现和解决问题。
-显式地释放资源：在程序中动态分配了内存后，一定要在不再需要使用这些资源时显式地释放它们。例如，在C语言中使用free函数进行内存释放。
-使用智能指针：C++等语言中提供了智能指针的概念，可以自动管理内存，避免手动释放资源时遗漏。
-避免循环引用：在使用面向对象编程时，尽量避免对象之间相互引用形成环路的情况。如果无法避免，可以使用弱引用等技术来解决。
-
-内存溢出:​	内存溢出是指程序在申请内存时，所需的内存空间超过了系统所分配的内存空间，使得程序无法正常运行.
-原因：
-
-分配的内存过于庞大，在内存池中没有足够的连续空间满足需求。
-内存泄漏：应用程序持续向系统申请内存空间，但没有及时释放，导致内存池被消耗殆尽。
-代码编写问题：如未正确释放已经申请的内存、指针操作错误等。
-操作系统本身限制了进程所能申请的最大内存。
-
-影响：
-​	内存溢出会导致程序崩溃或者无法正常运行，因为它直接涉及到程序的运行空间不足。
-解决办法：
-
-优化代码：避免出现无效的内存分配和内存泄漏。
-使用内存池技术：尽可能地重复利用已经申请的内存空间。
-增大操作系统对程序可用的最大内存限制（前提是操作系统支持）。
-将需要处理的数据划分为更小的块，分批进行处理，这样可以使每个块需要分配的内存量变小。
-
-二、关联&#x2F;区别关系:
-​	内存泄漏会造成内存溢出, 内存泄漏是指程序在申请内存后，无法释放已申请的内存空间，一次内存泄漏危害可以忽略，但内存泄漏堆积起来后果很严重，无论多少内存，迟早会被占光，最终会导致内存溢出。
-区别:
-
-发生时机：内存溢出通常发生在程序运行时，当数据结构的大小超过预设限制或者递归调用栈过深时，就会发生内存溢出。而内存泄漏则是在程序持续运行过程中逐渐累积的，当不再使用的内存没有及时释放时，就会产生泄漏。
-表现方式: 内存溢出会导致程序崩溃或者无法正常运行，因为它直接涉及到程序的运行空间不足。而内存泄漏在初期可能不会对程序产生明显影响，但随着时间的推移，未释放的内存不断累积，最终会导致系统资源耗尽，程序性能下降。
-解决方案: 对于内存溢出，解决方法通常涉及到优化数据结构和算法，减少内存消耗，或者增加系统可用内存。而解决内存泄漏则需要定位泄漏源头，修复代码中的内存管理问题，确保不再使用的内存能够被及时释放。
-
-三、Android内存泄漏场景:1. 非静态内部类&#x2F;匿名内部类造成原因：非静态内部类默认会持有外部类的引用，如果内部类的生命周期超过了外部类，就会造成内存泄漏。
-场景：当Activity销毁后，由于内部类中存在异步耗时任务还在执行，导致Activity实例一直被内部类持有无法被回收，造成内存泄漏。
-public class TestActivity extends AppCompatActivity &#123;    @Override    protected void onCreate(Bundle savedInstanceState) &#123; 		// ... ...                Button.setOnClickListener(new View.OnClickListener() &#123;            @Override            public void onClick(View view) &#123;                new Thread(new Runnable() &#123;                    @Override                    public void run() &#123;                        try &#123;                            // 模拟耗时操作                            Thread.sleep(1000);                        &#125; catch (InterruptedException e) &#123;                            throw new RuntimeException(e);                        &#125;                    &#125;                &#125;).start();            &#125;        &#125;);    &#125;&#125;
-
-解决办法：使用静态内部类，并通过弱引用的方式持有外部类。
-public class TestActivity extends AppCompatActivity &#123;    @Override    protected void onCreate(Bundle savedInstanceState) &#123;        super.onCreate(savedInstanceState);        setContentView(R.layout.activity_test);        Button button = findViewById(R.id.button);        button.setOnClickListener(new View.OnClickListener() &#123;            @Override            public void onClick(View view) &#123;                new Thread(new MyRunnable()).start();            &#125;        &#125;);    &#125;    static class MyRunnable implements Runnable &#123;        @Override        public void run() &#123;            try &#123;                // 模拟耗时操作                Thread.sleep(1000);            &#125; catch (InterruptedException e) &#123;                throw new RuntimeException(e);            &#125;        &#125;    &#125;&#125;
-
-2. 静态成员变量造成的内存泄漏造成原因：静态成员变量的生命周期等于应用程序的生命周期，如果该静态成员引用的变量生命周期小于该静态变量，就会造成内存泄漏。
-场景：静态成员变量持有了一个耗费资源过多的实例（如Activity、Fragment）。
-public class Person &#123;    private static Activity mActivity;    Person(Activity activity) &#123;        mActivity = activity;    &#125;&#125;
-
-解决办法：尽量避免使用Static成员变量引用资源耗费过多的实例，如果必须使用，可以使用Application的Context。这样可以随着应用生命周期创建销毁.
-3. 单例模式造成的内存泄漏造成原因：单例模式由于其具有静态特性，导致其生命周期等于应用程序生命周期，如果单例中持有别的类的实例，就会造成内存泄漏。
-场景：单例模式中持有一个耗费资源过多的实例（如Context）。
-public class SingleInstance &#123;    private static SingleInstance instance;    private Context mContext;    private SingleInstance(Context context) &#123;        this.mContext = context; // 传递的是Activity的context    &#125;    public static SingleInstance getInstance(Context context) &#123;        if (instance == null) &#123;            instance = new SingleInstance(context);        &#125;        return instance;    &#125;&#125;
-
-解决办法：使用Application的Context代替Activity的Context。
-4. Handler造成的内存泄漏造成原因：Handler会持有外部类的对象（如Activity），如果Handler中还有消息没执行完，此时创建Handler的Activity关闭就会造成内存泄漏。
-场景：Activity中通过一个子线程异步请求网络数据，请求成功后更新当前页面。
-public class MainActivity extends AppCompatActivity &#123;    private Handler mHandler = new Handler(Looper.getMainLooper()) &#123;        @Override        public void handleMessage(Message msg) &#123;            // 更新页面        &#125;    &#125;;    // 成功获取到网络数据后更新页面    private void handleData(String data) &#123;        Message message = Message.obtain();        message.obj = data;        mHandler.sendMessage(message);    &#125;&#125;
-
-解决办法：
-
-使用静态内部类+弱引用。
-在Activity销毁时，及时清理消息队列中的消息。
-
-public class MainActivity extends AppCompatActivity &#123;    private static class MyHandler extends Handler &#123;        private final WeakReference&lt;MainActivity&gt; mActivity;        public MyHandler(MainActivity activity) &#123;            mActivity = new WeakReference&lt;&gt;(activity);        &#125;        @Override        public void handleMessage(Message msg) &#123;            MainActivity activity = mActivity.get();            if (activity != null) &#123;                // 更新页面            &#125;        &#125;    &#125;    private MyHandler mHandler;    @Override    protected void onCreate(Bundle savedInstanceState) &#123;        super.onCreate(savedInstanceState);        setContentView(R.layout.activity_main);        mHandler = new MyHandler(this);    &#125;    @Override    protected void onDestroy() &#123;        super.onDestroy();        if (mHandler != null) &#123;            mHandler.removeCallbacksAndMessages(null);        &#125;    &#125;&#125;
-
-5. 资源性对象未关闭造成的内存泄漏造成原因：对于资源性对象（如BroadcastReceiver、EventBus等），在不再使用时，应该立即调用其close()函数将其关闭，然后再置为null。否则会造成内存泄漏。
-场景：Activity中注册了BroadcastReceiver，但在onDestroy方法中没有注销该接收器。
-public class MainActivity extends AppCompatActivity &#123;    private MyReceiver myReceiver;    @Override    protected void onCreate(Bundle savedInstanceState) &#123;        super.onCreate(savedInstanceState);        setContentView(R.layout.activity_main);        myReceiver = new MyReceiver();        registerReceiver(myReceiver, new IntentFilter(&quot;MY_ACTION&quot;));    &#125;    // 假设未重写onDestroy方法&#125;class MyReceiver extends BroadcastReceiver &#123;    @Override    public void onReceive(Context context, Intent intent) &#123;        // 处理广播    &#125;&#125;
-
-解决办法：在onDestroy方法中注销广播接收器。
-@Overrideprotected void onDestroy() &#123;    super.onDestroy();    unregisterReceiver(myReceiver); // 解除注册&#125;
-
-6. 容器中的对象未清理造成的内存泄漏造成原因：在使用集合类（如ArrayList、HashMap等）时，如果集合中的对象不再使用，但没有及时从集合中移除，就会导致这些对象无法被垃圾回收器回收，从而造成内存泄漏。
-场景：在Activity中创建了一个ArrayList来存储一些对象，但在Activity销毁时，没有清空这个ArrayList。
-解决办法：在Activity销毁时，清空集合中的对象，并将其置为null。
-@Overrideprotected void onDestroy() &#123;    super.onDestroy();    if (myList != null) &#123;        myList.clear();        myList = null;    &#125;&#125;
-
-Liko在 OOM 和内存触顶时通过用户无感知 dump 来获取 HPROF 文件，当 App 退出到后台且内存 充足的情况进行分析，裁剪 HPROF 回传进行分析
-KOOM利用系统内核COW(Copy-on-write，写时复制)机制，每次dump内存镜像前先暂停虚拟机，然后fork子进程来执行dump操作，父进程在fork成功后立刻恢复虚拟机运行，整个过程对于父进程来讲总耗时只有几毫秒。内存镜像于闲时进行独立进程单线程本地分析，分析完即删除。
-LeakCanary原理分析
-分为以下几步：
-
-监测Activity 的生命周期的 onDestroy() 的调用。
-当某个 Activity 的 onDestroy() 调用后，便对这个 activity 创建一个带 ReferenceQueue 的弱引用，并且给这个弱引用创建了一个 key 保存在 Set集合 中。
-如果这个 activity 可以被回收，那么弱引用就会被添加到 ReferenceQueue 中。
-等待主线程进入 idle(即空闲)后，通过一次遍历，在 ReferenceQueue 中的弱引用所对应的 key 将从 retainedKeys 中移除，说明其没有内存泄漏。
-如果 activity 没有被回收，先强制进行一次 gc，再来检查，如果 key 还存在 retainedKeys 中，说明 activity 不可回收，同时也说明了出现了内存泄漏。
-发生内存泄露之后，dump内存快照，分析 hprof 文件，找到泄露路径（使用 haha 库分析），发送到通知栏
-
+    <title>并行&amp;并发 静心理解</title>
+    <url>/2024/08/23/%E5%B9%B6%E8%A1%8C-%E5%B9%B6%E5%8F%91-%E9%9D%99%E5%BF%83%E7%90%86%E8%A7%A3/</url>
+    <content><![CDATA[并行 &amp; 并发并行 ： 并行是指多个任务或者操作再同一时间点上同时执行.(前提是在支持多处理器机器及调度系统上)
+并发 ： 并发是指多个任务或操作在同一时间段内交替执行, 快速地在多个任务之间切换, 看起来像是同时进行的.
+并行 更依赖硬件TAG: 物理分离, 资源独立
+在每个核上独立执行一个任务, 更依赖硬件
+并发 更依赖系统TAG: 资源共享, 时间片, 上下文切换
+操作系统通过时间分片实现并发, 快速的在多个任务之间切换, 每个任务获得一小段CPU时间.  
+从物理层面了解并行: 多个任务在物理上同时进行, 需要多个处理器或多核处理器来实现
+并发: 多个任务在逻辑上同时进行, 实际是在单个处理器上通过快速切换来实现
+问题并行: 包括负载均衡、通信开销、数据一致性等。需要处理任务之间的同步和通信问题。此外，并行程序可能受到资源限制（如内存带宽、网络延迟等）的影响，导致性能不如预期。
+并发: 包括死锁、竞态条件、资源同步等。可以提高程序的响应性和吞吐量，但过多的上下文切换会增加系统开销，降低整体性能。
 ]]></content>
   </entry>
   <entry>
@@ -1762,19 +1758,23 @@ SM9SM9 主要用于用户的身份认证。SM9 算法不需要申请数字证书
 ]]></content>
   </entry>
   <entry>
-    <title>并行&amp;并发 静心理解</title>
-    <url>/2024/08/23/%E5%B9%B6%E8%A1%8C-%E5%B9%B6%E5%8F%91-%E9%9D%99%E5%BF%83%E7%90%86%E8%A7%A3/</url>
-    <content><![CDATA[并行 &amp; 并发并行 ： 并行是指多个任务或者操作再同一时间点上同时执行.(前提是在支持多处理器机器及调度系统上)
-并发 ： 并发是指多个任务或操作在同一时间段内交替执行, 快速地在多个任务之间切换, 看起来像是同时进行的.
-并行 更依赖硬件TAG: 物理分离, 资源独立
-在每个核上独立执行一个任务, 更依赖硬件
-并发 更依赖系统TAG: 资源共享, 时间片, 上下文切换
-操作系统通过时间分片实现并发, 快速的在多个任务之间切换, 每个任务获得一小段CPU时间.  
-从物理层面了解并行: 多个任务在物理上同时进行, 需要多个处理器或多核处理器来实现
-并发: 多个任务在逻辑上同时进行, 实际是在单个处理器上通过快速切换来实现
-问题并行: 包括负载均衡、通信开销、数据一致性等。需要处理任务之间的同步和通信问题。此外，并行程序可能受到资源限制（如内存带宽、网络延迟等）的影响，导致性能不如预期。
-并发: 包括死锁、竞态条件、资源同步等。可以提高程序的响应性和吞吐量，但过多的上下文切换会增加系统开销，降低整体性能。
-]]></content>
+    <title>Kotlin Exception Handling</title>
+    <url>/2023/08/08/Kotlin-Exception-Handling/</url>
+    <content><![CDATA[1. 普通处理异常
+这种是普通的写法，明了的处理异常Kotlin也支持多个catch捕获
+
+try &#123;    throw Throwable(&quot;Diy Exception&quot;)&#125;catch (e: Exception) &#123;    print(&quot;Exception-&gt; $&#123;e.message&#125;&quot;)&#125;finally &#123;    print(&quot;finally&quot;)&#125;
+
+2. inline模式处理异常
+封装处理不会导致程序异常终止, 易于使用, 提供代码质量和开发效率吐槽一点 kotlin 不支持异常检查很不好, 需要人去识别可能出现的各种异常, 在对接各类功能接口很容易被忽略异常
+
+fun main() &#123;    var p = Person()    p.name = null    nameCatch(action = &#123;        val n: String = p.name ?: fail(&quot;name is null&quot;)    &#125;, exceptionFinally = &#123;        print(&quot;exceptionFinally&quot;)    &#125;)    print(&quot;================&quot;)    print(5)    print(&quot;================&quot;)&#125;inline fun nameCatch(action: () -&gt; Unit, exceptionFinally: () -&gt; Unit) &#123;    try &#123;        action()    &#125; catch (e: Exception) &#123;        print(&quot;inline try catch -&gt; $&#123;e.message&#125;&quot;)    &#125; finally &#123;        exceptionFinally()    &#125;&#125;]]></content>
+      <categories>
+        <category>Kotlin</category>
+      </categories>
+      <tags>
+        <tag>Kotlin</tag>
+      </tags>
   </entry>
   <entry>
     <title>思考-写怎样的代码看着舒服(Java/Kotlin)</title>
