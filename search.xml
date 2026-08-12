@@ -46,15 +46,31 @@ mainjava -jniLibs 	--arm64-v8a  		---libbrencrypt.so 	--armeabi-v7a  		---libbre
       </tags>
   </entry>
   <entry>
-    <title>Android Scrcpy Frp 远程操控/调试Android手机</title>
-    <url>/2023/06/25/Android-Scrcpy-Frp-%E8%BF%9C%E7%A8%8B%E6%93%8D%E6%8E%A7-%E8%B0%83%E8%AF%95Android%E6%89%8B%E6%9C%BA/</url>
-    <content><![CDATA[1. 安装msys2https://www.msys2.org/2. 安装环境参考文档https://blog.csdn.net/u012787710/article/details/130430216pacman -S mingw-w64-x86_64-SDL2pacman -S mingw-w64-x86_64-ffmpegpacman -S mingw-w64-x86_64-libusbpacman -S mingw-w64-x86_64-makepacman -S mingw-w64-x86_64-pkg-configpacman -S mingw-w64-x86_64-meson3.pwdgit clone https://github.com/Genymobile/scrcpy.git4.# 进入代码仓cd./ scrcpy/# 编译scrcpy-server 如果慢 跳过 下载编译好的 https://github.com/Genymobile/scrcpy/releases/tag/v2.0./server/scripts/build-wrapper.sh &quot;server&quot; &quot;server/scrcpy-server&quot; &quot;release&quot;# 我放入了 scrcpy-server	scrcpy\server\scrcpy-server# 编译Scrcpy.exemeson x --buildtype release --strip -Db_lto=true -Dprebuilt_server=./server/scrcpy-server-v2.0ninja.exe -Cx./run x---&gt;ERROR: Command not found: [adb], [start-server]---&gt;解: 放入代码仓根目录 adb.exe AdbWinApi.dll AdbWinUsbApi.dll]]></content>
+    <title>Android系统进程-思维构建</title>
+    <url>/2024/08/26/Android%E7%B3%BB%E7%BB%9F%E8%BF%9B%E7%A8%8B-%E6%80%9D%E7%BB%B4%E6%9E%84%E5%BB%BA/</url>
+    <content><![CDATA[init进程概述init进程并非鼻祖进程, 真正的鼻祖是进程id为0的 swapper进程(idele进程).
+init的进程(pid&#x3D;1), 是Android用户空间所有进程的鼻祖, 还有一个兄弟进程kthread进程(pid&#x3D;2), 是Android内核空间所有进程的鼻祖.
+init会 fork&#x2F;clone 多个子进程, vold\adbd\lmkd\logd\surfaceflinger\servicemanager\zygote(systemserver(AMS&#x2F;WMS&#x2F;PMS)&#x2F;launcher&#x2F;phone&#x2F;camera)
+surfaceflinger进程作用是：把多个来源的图像数据，如需合成则进行合成 否则直接提交给display驱动进行显示
+
+lmkd进程 Low Memory Killer Daemon低内存杀手守护进程, 查杀进程的。会监控内存的使用情况，当达到一定阀值的时候，会去杀掉一些处于后台的、优先级低的、占用内存高的进程, 是一个守护进程，会在后台默默的为内存的健康保驾护航.
+
+logdlog功能
+
+servicemanager进程为binder通信服务的，负责整个Android系统的binder通信 ，所以 需要提前启动
+
+zygote进程init进程直接创建的子进程中唯一可以运行java代码的进程
+
+进程启动选用脚本语言定义创建子进程以及顺序,后缀.rc, 可定义子进程基础信息、触发条件、前置命令、创建命令，需要用init脚本语言来配置创建子进程的步骤如下1. 首先 子进程在以.rc的脚本文件中，使用service关键字来配置子进程相关的信息2. 其次 在init.rc文件中（init.rc文件到底是在哪个目录这个是不确定的）使用import关键字引入脚本文件，使用on关键字来配置子进程的触发条件，3. 触发条件配置完毕后，如若子进程在创建之前需要配置一些前置操作或命令，则基于触发条件下配置这些信息4. 最后 使用start关键字来配置创建子进程的命令。子进程的基础信息会被解析到Service实例中，所有的Service实例会存放到ServiceList对象中。触发条件和它包含的命令会被解析到Action实例中，所有的Action实例会存放到ActionManager对象中.
+
+小计子进程的善后都需要创建进程的处理,1. 首先我先使用sigaction函数来注册SIGCHLD信号，这样就可以监听到子进程的状态了2. 其次使用signalfd函数为SIGCHLD信号生成一个fd（文件描述符）3. 再次使用epoll来见监听上一步生成的fd是否有可读数据4. 如监听到fd上有可读数据，则证明子进程的状态发生了变化，还需要使用waitpid函数来获取是哪个子进程死掉了
+
+servicemanagerzygotesystemserver进程ActivityManagerServiceWindowManagerServiceInputManagerServicePackageManagerServicesurfaceflinger进程四大组件binderhandler窗口ui绘制事件分发类加载机制]]></content>
       <categories>
         <category>Android</category>
       </categories>
       <tags>
         <tag>Android</tag>
-        <tag>Debug</tag>
       </tags>
   </entry>
   <entry>
@@ -128,232 +144,15 @@ lockEvents(cb) → _lockCount++ → cb() → _lockCount-- → unlocked()
       </tags>
   </entry>
   <entry>
-    <title>Flutter-Widget/Element/RenderObject-三树关系深度解析</title>
-    <url>/2026/08/03/Flutter-Widget-Element-RenderObject-%E4%B8%89%E6%A0%91%E5%85%B3%E7%B3%BB%E6%B7%B1%E5%BA%A6%E8%A7%A3%E6%9E%90/</url>
-    <content><![CDATA[Flutter Widget&#x2F;Element&#x2F;RenderObject 三树关系深度解析
-源码路径：packages/flutter/lib/src/widgets/framework.dart
-
-一、三树模型概述Flutter 的核心架构基于三棵树：
-
-Widget Tree：配置层，不可变、轻量，描述”应该是什么样子”
-Element Tree：状态层，可变、持久，管理 Widget 和 RenderObject 的对应关系
-RenderObject Tree：渲染层，负责布局、绘制和命中测试
-
-flowchart LR    subgraph &quot;Widget Tree 配置&quot;        W1[&quot;StatelessWidget&quot;] --&gt; W2[&quot;Container&quot;]        W1 --&gt; W3[&quot;Text&quot;]    end    subgraph &quot;Element Tree 状态&quot;        E1[&quot;StatelessElement&quot;] --&gt; E2[&quot;SingleChildRenderObjectElement&quot;]        E1 --&gt; E3[&quot;LeafRenderObjectElement&quot;]    end    subgraph &quot;RenderObject Tree 渲染&quot;        R1[&quot;RenderPadding&quot;] --&gt; R2[&quot;RenderParagraph&quot;]    end    W1 -.-&gt;|createElement| E1    W2 -.-&gt;|createElement| E2    W3 -.-&gt;|createElement| E3    E2 -.-&gt;|renderObject| R1    E3 -.-&gt;|renderObject| R2
-
-
-二、Widget 核心类层次classDiagram    class Widget &#123;        &lt;&lt;abstract&gt;&gt;        +key : Key?        +createElement() Element        +canUpdate(old, new) bool static    &#125;    class StatelessWidget &#123;        +build(context) Widget        +createElement() StatelessElement    &#125;    class StatefulWidget &#123;        +createState() State        +createElement() StatefulElement    &#125;    class ProxyWidget &#123;        +child : Widget    &#125;    class RenderObjectWidget &#123;        +createRenderObject() RenderObject        +updateRenderObject()        +didUnmountRenderObject()        +createElement() RenderObjectElement    &#125;    class LeafRenderObjectWidget &#123;        +createElement() LeafRenderObjectElement    &#125;    class SingleChildRenderObjectWidget &#123;        +child : Widget?        +createElement() SingleChildRenderObjectElement    &#125;    class MultiChildRenderObjectWidget &#123;        +children : List~Widget~        +createElement() MultiChildRenderObjectElement    &#125;    Widget &lt;|-- StatelessWidget    Widget &lt;|-- StatefulWidget    Widget &lt;|-- ProxyWidget    Widget &lt;|-- RenderObjectWidget    RenderObjectWidget &lt;|-- LeafRenderObjectWidget    RenderObjectWidget &lt;|-- SingleChildRenderObjectWidget    RenderObjectWidget &lt;|-- MultiChildRenderObjectWidget    ProxyWidget &lt;|-- InheritedWidget    ProxyWidget &lt;|-- ParentDataWidget
-
-Widget.canUpdate — Diff 算法核心// L432: 决定是否可复用旧 Elementstatic bool canUpdate(Widget oldWidget, Widget newWidget) &#123;  return oldWidget.runtimeType == newWidget.runtimeType      &amp;&amp; oldWidget.key == newWidget.key;&#125;
-
-canUpdate 返回 true → 复用旧 Element，调用 element.update(newWidget)canUpdate 返回 false → 旧 Element 卸载，创建新 Element
-
-三、Element 核心类层次与生命周期classDiagram    class Element &#123;        &lt;&lt;abstract&gt;&gt;        +widget : Widget        +depth : int        +owner : BuildOwner        +slot : dynamic        +mount(parent, slot)        +update(newWidget)        +deactivate()        +unmount()        +findAncestorRenderObjectElement()    &#125;    class ComponentElement &#123;        +_child : Element?        +performRebuild()        +mount() rebuild    &#125;    class StatelessElement &#123;        +build() widget.build(this)    &#125;    class StatefulElement &#123;        +_state : State        +build() state.build(this)        +mount() state.initState()        +update() state.didUpdateWidget()        +deactivate() state.deactivate()        +unmount() state.dispose()    &#125;    class RenderObjectElement &#123;        +renderObject : RenderObject        +mount() createRenderObject + attachRenderObject        +update() updateRenderObject        +deactivate() detachRenderObject        +unmount() didUnmountRenderObject    &#125;    class LeafRenderObjectElement    class SingleChildRenderObjectElement    class MultiChildRenderObjectElement    Element &lt;|-- ComponentElement    Element &lt;|-- RenderObjectElement    ComponentElement &lt;|-- StatelessElement    ComponentElement &lt;|-- StatefulElement    RenderObjectElement &lt;|-- LeafRenderObjectElement    RenderObjectElement &lt;|-- SingleChildRenderObjectElement    RenderObjectElement &lt;|-- MultiChildRenderObjectElement
-
-Element 生命周期状态机stateDiagram-v2    [*] --&gt; initial : createElement()    initial --&gt; active : mount(parent, slot)    active --&gt; active : update(newWidget)    active --&gt; inactive : deactivate()    inactive --&gt; active : activate() GlobalKey复用    inactive --&gt; defunct : unmount()    defunct --&gt; [*]
-
-
-四、updateChild — 三树更新的核心调度updateChild 是 Element 更新子节点的核心方法，根据 Widget.canUpdate 的结果决定子 Element 的命运：
-flowchart TD    A[&quot;updateChild(child, newWidget, newSlot)&quot;] --&gt; B&#123;&quot;newWidget == null?&quot;&#125;    B --&gt;|是| C&#123;&quot;child != null?&quot;&#125;    C --&gt;|是| D[&quot;deactivateChild(child)&lt;br/&gt;子树卸载&quot;]    C --&gt;|否| E[&quot;return null 无操作&quot;]    B --&gt;|否| F&#123;&quot;child != null?&quot;&#125;    F --&gt;|是| G&#123;&quot;Widget.canUpdate?&lt;br/&gt;runtimeType+key 相同?&quot;&#125;    G --&gt;|是| H[&quot;child.update(newWidget)&lt;br/&gt;复用 Element&quot;]    G --&gt;|否| I[&quot;newChild = inflateWidget&lt;br/&gt;deactivateChild(old)&quot;]    F --&gt;|否| J[&quot;newChild = inflateWidget&lt;br/&gt;创建新 Element&quot;]    H --&gt; K[&quot;return child&quot;]    I --&gt; K    J --&gt; K
-
-核心代码// L3982: updateChild — 子 Element 更新调度Element? updateChild(Element? child, Widget? newWidget, dynamic newSlot) &#123;  if (newWidget == null) &#123;    if (child != null) deactivateChild(child);    return null;  &#125;  if (child != null) &#123;    if (Widget.canUpdate(child.widget, newWidget)) &#123;      child.update(newWidget);  // 复用      return child;    &#125;    deactivateChild(child);     // 卸载旧  &#125;  return inflateWidget(newWidget, newSlot);  // 创建新&#125;
-
-
-五、Element.mount 挂载流程flowchart TD    A[&quot;mount(parent, newSlot)&quot;] --&gt; A1[&quot;_parent = parent&quot;]    A1 --&gt; A2[&quot;_slot = newSlot&quot;]    A2 --&gt; A3[&quot;depth = parent.depth + 1&quot;]    A3 --&gt; A4[&quot;_owner = parent.owner&quot;]    A4 --&gt; A5[&quot;parent.updateChild(this, widget, slot)&quot;]
-
-ComponentElement.mountflowchart TD    B1[&quot;super.mount()&quot;] --&gt; B2[&quot;rebuild() → performRebuild()&quot;]    B2 --&gt; B3[&quot;StatelessElement: widget.build(this)&quot;]    B2 --&gt; B4[&quot;StatefulElement: state.initState() → state.build()&quot;]
-
-RenderObjectElement.mountflowchart TD    C1[&quot;super.mount()&quot;] --&gt; C2[&quot;_renderObject = widget.createRenderObject()&quot;]    C2 --&gt; C3[&quot;attachRenderObject(newSlot)&quot;]    C3 --&gt; C4[&quot;renderObject.attach(owner)&quot;]
-
-
-六、RenderObjectElement 与 RenderObject 的桥接flowchart TD    A[&quot;RenderObjectElement.mount()&quot;] --&gt; B[&quot;widget.createRenderObject(this)&quot;]    B --&gt; C[&quot;renderObject = 新 RenderObject&quot;]    C --&gt; D[&quot;attachRenderObject(newSlot)&quot;]    D --&gt; E[&quot;renderObject.attach(owner.pipelineOwner)&quot;]    F[&quot;RenderObjectElement.update(newWidget)&quot;] --&gt; G[&quot;super.update()&quot;]    G --&gt; H[&quot;widget.updateRenderObject(this, renderObject)&quot;]    I[&quot;RenderObjectElement.unmount()&quot;] --&gt; J[&quot;widget.didUnmountRenderObject(renderObject)&quot;]    J --&gt; K[&quot;renderObject.detach()&quot;]    K --&gt; L[&quot;owner.releaseRenderObject(renderObject)&quot;]
-
-
-七、BuildOwner 构建管理flowchart TD    A[&quot;BuildOwner&quot;] --&gt; B[&quot;_dirtyElements : List~Element~&quot;]    A --&gt; C[&quot;_globalKeyRegistry : Map~Key, Element~&quot;]    D[&quot;onBuildScheduled()&quot;] --&gt; E[&quot;ensureVisualUpdate()&quot;]    F[&quot;buildScope(context, callback)&quot;] --&gt; G[&quot;排序 _dirtyElements depth升序&quot;]    G --&gt; H[&quot;遍历 dirty Elements&quot;]    H --&gt; I[&quot;element.rebuild() → performRebuild()&quot;]    I --&gt; J[&quot;finalizeTree() → unmount 不可恢复的 Elements&quot;]
-
-
-八、完整帧构建流程flowchart TD    A[&quot;BuildOwner.buildScope()&quot;] --&gt; B[&quot;按 depth 升序排序 dirty Elements&quot;]    B --&gt; C[&quot;遍历每个 dirty Element&quot;]    C --&gt; D[&quot;element.rebuild()&quot;]    D --&gt; E[&quot;ComponentElement.performRebuild()&quot;]    E --&gt; F[&quot;built = build()&quot;]    F --&gt; G[&quot;updateChild(_child, built, slot)&quot;]    G --&gt; H&#123;&quot;Widget.canUpdate?&quot;&#125;    H --&gt;|复用| I[&quot;child.update(newWidget)&quot;]    H --&gt;|新建| J[&quot;inflateWidget → createElement → mount&quot;]    H --&gt;|卸载| K[&quot;deactivateChild → deactivate → unmount&quot;]    J --&gt; L[&quot;RenderObjectElement.mount&quot;]    L --&gt; M[&quot;createRenderObject → attachRenderObject&quot;]    I --&gt; N[&quot;RenderObjectElement.update&quot;]    N --&gt; O[&quot;updateRenderObject → markNeedsLayout/markNeedsPaint&quot;]
-
-
-九、StatefulElement 与 State 的交互flowchart TD    A[&quot;StatefulElement.mount()&quot;] --&gt; A1[&quot;super.mount()&quot;]    A1 --&gt; A2[&quot;_state = widget.createState()&quot;]    A2 --&gt; A3[&quot;_state._element = this&quot;]    A3 --&gt; A4[&quot;_state.initState()&quot;]    A4 --&gt; A5[&quot;rebuild() → _state.build()&quot;]    B[&quot;StatefulElement.update(newWidget)&quot;] --&gt; B1[&quot;_state.didUpdateWidget(oldWidget)&quot;]    B1 --&gt; B2[&quot;rebuild() → _state.build()&quot;]    C[&quot;setState(callback)&quot;] --&gt; C1[&quot;_element.markNeedsBuild()&quot;]    C1 --&gt; C2[&quot;BuildOwner.scheduleBuildFor(_element)&quot;]    C2 --&gt; C3[&quot;下一帧 buildScope → rebuild&quot;]    D[&quot;StatefulElement.deactivate()&quot;] --&gt; D1[&quot;_state.deactivate()&quot;]    E[&quot;StatefulElement.unmount()&quot;] --&gt; E1[&quot;_state.dispose()&quot;]
-
-
-十、关键调用链总结
-
-
-场景
-调用链
-
-
-
-首次构建
-mount() → rebuild() → build() → updateChild(null, built, slot) → inflateWidget() → createElement() → child.mount()
-
-
-Widget 更新
-markNeedsBuild() → buildScope() → rebuild() → build() → updateChild(old, built, slot) → canUpdate? update&#x2F;inflate
-
-
-Widget 替换
-canUpdate = false → deactivateChild() → inflateWidget() → 旧 Element deactivate → 新 Element mount
-
-
-State 更新
-setState() → markNeedsBuild() → 下一帧 rebuild() → build()
-
-
-Element 卸载
-deactivate() → 移入 _inactiveElements → unmount() → RenderObjectElement.unmount() → detachRenderObject()
-
-
-GlobalKey 复用
-inflateWidget() → globalKeyRegistry 查找 → 旧 Element deactivate → activate() 复用
-
-
-]]></content>
-      <categories>
-        <category>Flutter</category>
-      </categories>
-      <tags>
-        <tag>Flutter</tag>
-      </tags>
-  </entry>
-  <entry>
-    <title>Android系统进程-思维构建</title>
-    <url>/2024/08/26/Android%E7%B3%BB%E7%BB%9F%E8%BF%9B%E7%A8%8B-%E6%80%9D%E7%BB%B4%E6%9E%84%E5%BB%BA/</url>
-    <content><![CDATA[init进程概述init进程并非鼻祖进程, 真正的鼻祖是进程id为0的 swapper进程(idele进程).
-init的进程(pid&#x3D;1), 是Android用户空间所有进程的鼻祖, 还有一个兄弟进程kthread进程(pid&#x3D;2), 是Android内核空间所有进程的鼻祖.
-init会 fork&#x2F;clone 多个子进程, vold\adbd\lmkd\logd\surfaceflinger\servicemanager\zygote(systemserver(AMS&#x2F;WMS&#x2F;PMS)&#x2F;launcher&#x2F;phone&#x2F;camera)
-surfaceflinger进程作用是：把多个来源的图像数据，如需合成则进行合成 否则直接提交给display驱动进行显示
-
-lmkd进程 Low Memory Killer Daemon低内存杀手守护进程, 查杀进程的。会监控内存的使用情况，当达到一定阀值的时候，会去杀掉一些处于后台的、优先级低的、占用内存高的进程, 是一个守护进程，会在后台默默的为内存的健康保驾护航.
-
-logdlog功能
-
-servicemanager进程为binder通信服务的，负责整个Android系统的binder通信 ，所以 需要提前启动
-
-zygote进程init进程直接创建的子进程中唯一可以运行java代码的进程
-
-进程启动选用脚本语言定义创建子进程以及顺序,后缀.rc, 可定义子进程基础信息、触发条件、前置命令、创建命令，需要用init脚本语言来配置创建子进程的步骤如下1. 首先 子进程在以.rc的脚本文件中，使用service关键字来配置子进程相关的信息2. 其次 在init.rc文件中（init.rc文件到底是在哪个目录这个是不确定的）使用import关键字引入脚本文件，使用on关键字来配置子进程的触发条件，3. 触发条件配置完毕后，如若子进程在创建之前需要配置一些前置操作或命令，则基于触发条件下配置这些信息4. 最后 使用start关键字来配置创建子进程的命令。子进程的基础信息会被解析到Service实例中，所有的Service实例会存放到ServiceList对象中。触发条件和它包含的命令会被解析到Action实例中，所有的Action实例会存放到ActionManager对象中.
-
-小计子进程的善后都需要创建进程的处理,1. 首先我先使用sigaction函数来注册SIGCHLD信号，这样就可以监听到子进程的状态了2. 其次使用signalfd函数为SIGCHLD信号生成一个fd（文件描述符）3. 再次使用epoll来见监听上一步生成的fd是否有可读数据4. 如监听到fd上有可读数据，则证明子进程的状态发生了变化，还需要使用waitpid函数来获取是哪个子进程死掉了
-
-servicemanagerzygotesystemserver进程ActivityManagerServiceWindowManagerServiceInputManagerServicePackageManagerServicesurfaceflinger进程四大组件binderhandler窗口ui绘制事件分发类加载机制]]></content>
+    <title>Android Scrcpy Frp 远程操控/调试Android手机</title>
+    <url>/2023/06/25/Android-Scrcpy-Frp-%E8%BF%9C%E7%A8%8B%E6%93%8D%E6%8E%A7-%E8%B0%83%E8%AF%95Android%E6%89%8B%E6%9C%BA/</url>
+    <content><![CDATA[1. 安装msys2https://www.msys2.org/2. 安装环境参考文档https://blog.csdn.net/u012787710/article/details/130430216pacman -S mingw-w64-x86_64-SDL2pacman -S mingw-w64-x86_64-ffmpegpacman -S mingw-w64-x86_64-libusbpacman -S mingw-w64-x86_64-makepacman -S mingw-w64-x86_64-pkg-configpacman -S mingw-w64-x86_64-meson3.pwdgit clone https://github.com/Genymobile/scrcpy.git4.# 进入代码仓cd./ scrcpy/# 编译scrcpy-server 如果慢 跳过 下载编译好的 https://github.com/Genymobile/scrcpy/releases/tag/v2.0./server/scripts/build-wrapper.sh &quot;server&quot; &quot;server/scrcpy-server&quot; &quot;release&quot;# 我放入了 scrcpy-server	scrcpy\server\scrcpy-server# 编译Scrcpy.exemeson x --buildtype release --strip -Db_lto=true -Dprebuilt_server=./server/scrcpy-server-v2.0ninja.exe -Cx./run x---&gt;ERROR: Command not found: [adb], [start-server]---&gt;解: 放入代码仓根目录 adb.exe AdbWinApi.dll AdbWinUsbApi.dll]]></content>
       <categories>
         <category>Android</category>
       </categories>
       <tags>
         <tag>Android</tag>
-      </tags>
-  </entry>
-  <entry>
-    <title>Flutter-框架初始化与帧循环深度解析</title>
-    <url>/2026/08/03/Flutter-%E6%A1%86%E6%9E%B6%E5%88%9D%E5%A7%8B%E5%8C%96%E4%B8%8E%E5%B8%A7%E5%BE%AA%E7%8E%AF%E6%B7%B1%E5%BA%A6%E8%A7%A3%E6%9E%90/</url>
-    <content><![CDATA[Flutter 框架初始化与帧循环深度解析
-源码路径：packages/flutter/lib/src/widgets/binding.dart
-
-一、WidgetsFlutterBinding — 七 Mixin 组合classDiagram    class WidgetsFlutterBinding &#123;        +ensureInitialized() WidgetsBinding static    &#125;    class BindingBase    class GestureBinding    class SchedulerBinding    class ServicesBinding    class PaintingBinding    class SemanticsBinding    class RendererBinding    class WidgetsBinding    WidgetsFlutterBinding --|&gt; BindingBase    WidgetsFlutterBinding ..|&gt; GestureBinding : with    WidgetsFlutterBinding ..|&gt; SchedulerBinding : with    WidgetsFlutterBinding ..|&gt; ServicesBinding : with    WidgetsFlutterBinding ..|&gt; PaintingBinding : with    WidgetsFlutterBinding ..|&gt; SemanticsBinding : with    WidgetsFlutterBinding ..|&gt; RendererBinding : with    WidgetsFlutterBinding ..|&gt; WidgetsBinding : with
-
-// L1819: 七 mixin 组合定义class WidgetsFlutterBinding extends BindingBase    with GestureBinding,         SchedulerBinding,         ServicesBinding,         PaintingBinding,         SemanticsBinding,         RendererBinding,         WidgetsBinding &#123;  static WidgetsBinding ensureInitialized() &#123;    if (_instance == null) WidgetsFlutterBinding();    return WidgetsBinding.instance;  &#125;&#125;
-
-
-二、runApp 启动全链路flowchart TD    A[&quot;runApp(app)&quot;] --&gt; B[&quot;WidgetsFlutterBinding.ensureInitialized()&quot;]    B --&gt; C[&quot;WidgetsFlutterBinding() 构造&quot;]    C --&gt; D[&quot;BindingBase() → initInstances × 7&quot;]    D --&gt; E[&quot;initServiceExtensions × 7&quot;]    E --&gt; F[&quot;_runWidget(binding.wrapWithDefaultView(app))&quot;]    F --&gt; G[&quot;scheduleAttachRootWidget(app)&quot;]    G --&gt; H[&quot;scheduleWarmUpFrame()&quot;]    H --&gt; I[&quot;首帧调度: handleBeginFrame → handleDrawFrame&quot;]
-
-核心代码// L1574: runApp 入口void runApp(Widget app) &#123;  final WidgetsBinding binding = WidgetsFlutterBinding.ensureInitialized();  _runWidget(binding.wrapWithDefaultView(app), binding, &#x27;runApp&#x27;);&#125;// L1639: _runWidgetvoid _runWidget(Widget app, WidgetsBinding binding, String debugMethodName) &#123;  binding.scheduleAttachRootWidget(app);  binding.scheduleWarmUpFrame();&#125;// L1840: ensureInitializedstatic WidgetsBinding ensureInitialized() &#123;  if (_instance == null) WidgetsFlutterBinding();  return WidgetsBinding.instance;&#125;
-
-
-三、WidgetsBinding.initInstances 初始化flowchart TD    A[&quot;WidgetsBinding.initInstances()&quot;] --&gt; B[&quot;super.initInstances()&quot;]    B --&gt; C[&quot;_instance = this&quot;]    C --&gt; D[&quot;buildOwner = BuildOwner()&quot;]    D --&gt; E[&quot;buildOwner.onBuildScheduled = _handleBuildScheduled&quot;]    E --&gt; F[&quot;注册栈帧过滤器&lt;br/&gt;ComponentElement/StatefulElement/...&quot;]    F --&gt; G[&quot;addPersistentFrameCallback(_drawFrame)&quot;]    G --&gt; H[&quot;initServiceExtensions()&quot;]
-
-核心代码// L537+: WidgetsBinding.initInstances@overridevoid initInstances() &#123;  super.initInstances();  _instance = this;  buildOwner = BuildOwner();  buildOwner!.onBuildScheduled = _handleBuildScheduled;  // 注册栈帧过滤器...  addPersistentFrameCallback(_drawFrame);  // 每帧回调&#125;// L1121: 构建调度void _handleBuildScheduled() &#123;  ensureVisualUpdate();  // 请求下一帧&#125;
-
-
-四、RootWidget.attach — 根挂载flowchart TD    A[&quot;RootWidget.attach(owner, element)&quot;] --&gt; B&#123;&quot;element == null?&lt;br/&gt;首次挂载?&quot;&#125;    B --&gt;|是| C[&quot;element = createElement() → RootElement&quot;]    C --&gt; D[&quot;owner.lockState(assignOwner)&quot;]    D --&gt; E[&quot;owner.buildScope(mount)&quot;]    B --&gt;|否| F[&quot;element.markNeedsBuild()&quot;]    F --&gt; G[&quot;下一帧 rebuild&quot;]
-
-核心代码// L1696: RootWidget.attachvoid attach(BuildOwner owner, Element? element) &#123;  if (element == null) &#123;    owner.lockState(() &#123;      final Element newElement = createElement();      newElement.assignOwner(owner);      owner.buildScope(newElement, () &#123;        newElement.mount(null, null);      &#125;);    &#125;);  &#125; else &#123;    element.markNeedsBuild();  &#125;&#125;
-
-
-五、RootElement 挂载与重建flowchart TD    A[&quot;RootElement.mount()&quot;] --&gt; B[&quot;super.mount()&quot;]    B --&gt; C[&quot;_rebuild()&quot;]    C --&gt; D[&quot;updateChild(null, widget.child, null)&quot;]    D --&gt; E[&quot;inflateWidget → createElement → mount&quot;]    F[&quot;RootElement.performRebuild()&quot;] --&gt; G&#123;&quot;_newWidget != null?&quot;&#125;    G --&gt;|有延迟更新| H[&quot;_child = updateChild(_child, _newWidget, ...)&quot;]    G --&gt;|无| I[&quot;_rebuild()&quot;]    H --&gt; J[&quot;_newWidget = null&quot;]
-
-
-六、drawFrame — 帧循环核心drawFrame 是每帧执行的核心回调，通过 addPersistentFrameCallback 注册到 SchedulerBinding。
-flowchart TD    A[&quot;drawFrame()&quot;] --&gt; B[&quot;buildOwner!.buildScope(rootElement!)&quot;]    B --&gt; C[&quot;构建 dirty Elements&quot;]    C --&gt; D[&quot;super.drawFrame()&quot;]    D --&gt; D1[&quot;RendererBinding.drawFrame()&quot;]    D1 --&gt; D2[&quot;pipelineOwner.flushLayout()&quot;]    D2 --&gt; D3[&quot;pipelineOwner.flushCompositingBits()&quot;]    D3 --&gt; D4[&quot;pipelineOwner.flushPaint()&quot;]    D4 --&gt; D5[&quot;pipelineOwner.flushSemantics()&quot;]    D5 --&gt; D6[&quot;renderView.compositeFrame()&quot;]    D6 --&gt; E[&quot;buildOwner!.finalizeTree()&quot;]    E --&gt; F[&quot;unmount 不可恢复的 inactive Elements&quot;]
-
-核心代码// L1227: WidgetsBinding.drawFrame@overridevoid drawFrame() &#123;  // ... 省略调试逻辑  try &#123;    if (renderViewElement != null) &#123;      buildOwner!.buildScope(renderViewElement!);  // 1. 构建    &#125;    super.drawFrame();  // 2. 布局+绘制+合成    // super.drawFrame() 调用链:    //   RendererBinding.drawFrame()    //     → pipelineOwner.flushLayout()    //     → pipelineOwner.flushCompositingBits()    //     → pipelineOwner.flushPaint()    //     → renderView.compositeFrame()  &#125; finally &#123;    buildOwner!.finalizeTree();  // 3. 清理  &#125;&#125;
-
-
-七、帧调度机制 — SchedulerBindingflowchart TD    A[&quot;Vsync 信号&quot;] --&gt; B[&quot;handleBeginFrame(rawTimeStamp)&quot;]    B --&gt; C[&quot;处理 transientCallbacks (_transientCallbacks)&quot;]    C --&gt; D[&quot;handleDrawFrame()&quot;]    D --&gt; E[&quot;处理 persistentCallbacks (_persistentCallbacks)&quot;]    E --&gt; F[&quot;drawFrame() — 帧循环核心&quot;]    F --&gt; G[&quot;处理 postFrameCallbacks (_postFrameCallbacks)&quot;]
-
-帧回调类型
-
-
-回调类型
-注册方法
-用途
-
-
-
-transientCallback
-addTransientFrameCallback
-一次性动画回调，帧后自动移除
-
-
-persistentCallback
-addPersistentFrameCallback
-持久回调，每帧执行（如 drawFrame）
-
-
-postFrameCallback
-addPostFrameCallback
-帧后回调，执行一次后自动移除
-
-
-
-八、scheduleAttachRootWidget — 异步根挂载flowchart TD    A[&quot;scheduleAttachRootWidget(rootWidget)&quot;] --&gt; B&#123;&quot;_rootElement != null?&quot;&#125;    B --&gt;|是| C[&quot;_rootElement.widget.child = rootWidget&lt;br/&gt;markNeedsBuild()&quot;]    B --&gt;|否| D[&quot;attachRootWidget(rootWidget)&quot;]    D --&gt; E[&quot;attachToBuildOwner(RootWidget(child: rootWidget))&quot;]    E --&gt; F[&quot;RootWidget.attach(owner, null)&quot;]    F --&gt; G[&quot;createElement() → RootElement&quot;]    G --&gt; H[&quot;assignOwner → buildScope(mount)&quot;]
-
-
-九、WidgetsBindingObserver 观察者接口classDiagram    class WidgetsBindingObserver &#123;        &lt;&lt;interface&gt;&gt;        +didPopRoute() bool        +didPushRoute(route) bool        +didPushRouteInformation(info) bool        +didChangeAppLifecycleState(state)        +didChangeMetrics()        +didChangeTextScaleFactor()        +didChangePlatformBrightness()        +didChangeLocales()        +didChangeAccessibilityFeatures()        +handleStartBackGesture() bool        +handleUpdateBackGesture(progress) bool        +handleCommitBackGesture() bool    &#125;
-
-注册&#x2F;注销观察者：
-// 注册WidgetsBinding.instance.addObserver(observer);// 注销WidgetsBinding.instance.removeObserver(observer);
-
-
-十、从 runApp 到首帧渲染完整流程flowchart TD    A[&quot;runApp(MyApp)&quot;] --&gt; B[&quot;WidgetsFlutterBinding.ensureInitialized()&quot;]    B --&gt; C[&quot;BindingBase 构造&quot;]    C --&gt; D[&quot;7个 Binding 的 initInstances&quot;]    D --&gt; E[&quot;7个 Binding 的 initServiceExtensions&quot;]    E --&gt; F[&quot;scheduleAttachRootWidget(wrapWithDefaultView(MyApp))&quot;]    F --&gt; G[&quot;scheduleWarmUpFrame()&quot;]    G --&gt; H[&quot;handleBeginFrame()&quot;]    H --&gt; I[&quot;handleDrawFrame()&quot;]    I --&gt; J[&quot;drawFrame()&quot;]    J --&gt; K[&quot;buildScope → RootElement.mount → _rebuild&quot;]    K --&gt; L[&quot;Widget Tree 构建 → Element Tree 构建&quot;]    L --&gt; M[&quot;RenderObjectElement.mount → createRenderObject&quot;]    M --&gt; N[&quot;flushLayout → flushCompositingBits → flushPaint&quot;]    N --&gt; O[&quot;首帧渲染完成&quot;]
-
-
-十一、关键调用链总结
-
-
-场景
-调用链
-
-
-
-应用启动
-runApp() → ensureInitialized() → initInstances() × 7 → scheduleAttachRootWidget() → scheduleWarmUpFrame()
-
-
-根挂载
-attachRootWidget() → RootWidget.attach() → createElement() → buildScope(mount)
-
-
-每帧循环
-Vsync → handleBeginFrame() → handleDrawFrame() → drawFrame() → buildScope + flushLayout + flushPaint
-
-
-构建调度
-setState() → markNeedsBuild() → onBuildScheduled() → ensureVisualUpdate() → 请求 Vsync
-
-
-帧三阶段
-1.buildScope构建 → 2.super.drawFrame()布局+绘制+合成 → 3.finalizeTree清理
-
-
-]]></content>
-      <categories>
-        <category>Flutter</category>
-      </categories>
-      <tags>
-        <tag>Flutter</tag>
+        <tag>Debug</tag>
       </tags>
   </entry>
   <entry>
@@ -1628,6 +1427,280 @@ More info: Deployment
 ]]></content>
   </entry>
   <entry>
+    <title>Flutter-Widget/Element/RenderObject-三树关系深度解析</title>
+    <url>/2026/08/03/Flutter-Widget-Element-RenderObject-%E4%B8%89%E6%A0%91%E5%85%B3%E7%B3%BB%E6%B7%B1%E5%BA%A6%E8%A7%A3%E6%9E%90/</url>
+    <content><![CDATA[Flutter Widget&#x2F;Element&#x2F;RenderObject 三树关系深度解析
+源码路径：packages/flutter/lib/src/widgets/framework.dart
+
+一、三树模型概述Flutter 的核心架构基于三棵树：
+
+Widget Tree：配置层，不可变、轻量，描述”应该是什么样子”
+Element Tree：状态层，可变、持久，管理 Widget 和 RenderObject 的对应关系
+RenderObject Tree：渲染层，负责布局、绘制和命中测试
+
+flowchart LR    subgraph &quot;Widget Tree 配置&quot;        W1[&quot;StatelessWidget&quot;] --&gt; W2[&quot;Container&quot;]        W1 --&gt; W3[&quot;Text&quot;]    end    subgraph &quot;Element Tree 状态&quot;        E1[&quot;StatelessElement&quot;] --&gt; E2[&quot;SingleChildRenderObjectElement&quot;]        E1 --&gt; E3[&quot;LeafRenderObjectElement&quot;]    end    subgraph &quot;RenderObject Tree 渲染&quot;        R1[&quot;RenderPadding&quot;] --&gt; R2[&quot;RenderParagraph&quot;]    end    W1 -.-&gt;|createElement| E1    W2 -.-&gt;|createElement| E2    W3 -.-&gt;|createElement| E3    E2 -.-&gt;|renderObject| R1    E3 -.-&gt;|renderObject| R2
+
+
+二、Widget 核心类层次classDiagram    class Widget &#123;        &lt;&lt;abstract&gt;&gt;        +key : Key?        +createElement() Element        +canUpdate(old, new) bool static    &#125;    class StatelessWidget &#123;        +build(context) Widget        +createElement() StatelessElement    &#125;    class StatefulWidget &#123;        +createState() State        +createElement() StatefulElement    &#125;    class ProxyWidget &#123;        +child : Widget    &#125;    class RenderObjectWidget &#123;        +createRenderObject() RenderObject        +updateRenderObject()        +didUnmountRenderObject()        +createElement() RenderObjectElement    &#125;    class LeafRenderObjectWidget &#123;        +createElement() LeafRenderObjectElement    &#125;    class SingleChildRenderObjectWidget &#123;        +child : Widget?        +createElement() SingleChildRenderObjectElement    &#125;    class MultiChildRenderObjectWidget &#123;        +children : List~Widget~        +createElement() MultiChildRenderObjectElement    &#125;    Widget &lt;|-- StatelessWidget    Widget &lt;|-- StatefulWidget    Widget &lt;|-- ProxyWidget    Widget &lt;|-- RenderObjectWidget    RenderObjectWidget &lt;|-- LeafRenderObjectWidget    RenderObjectWidget &lt;|-- SingleChildRenderObjectWidget    RenderObjectWidget &lt;|-- MultiChildRenderObjectWidget    ProxyWidget &lt;|-- InheritedWidget    ProxyWidget &lt;|-- ParentDataWidget
+
+Widget.canUpdate — Diff 算法核心// L432: 决定是否可复用旧 Elementstatic bool canUpdate(Widget oldWidget, Widget newWidget) &#123;  return oldWidget.runtimeType == newWidget.runtimeType      &amp;&amp; oldWidget.key == newWidget.key;&#125;
+
+canUpdate 返回 true → 复用旧 Element，调用 element.update(newWidget)canUpdate 返回 false → 旧 Element 卸载，创建新 Element
+
+三、Element 核心类层次与生命周期classDiagram    class Element &#123;        &lt;&lt;abstract&gt;&gt;        +widget : Widget        +depth : int        +owner : BuildOwner        +slot : dynamic        +mount(parent, slot)        +update(newWidget)        +deactivate()        +unmount()        +findAncestorRenderObjectElement()    &#125;    class ComponentElement &#123;        +_child : Element?        +performRebuild()        +mount() rebuild    &#125;    class StatelessElement &#123;        +build() widget.build(this)    &#125;    class StatefulElement &#123;        +_state : State        +build() state.build(this)        +mount() state.initState()        +update() state.didUpdateWidget()        +deactivate() state.deactivate()        +unmount() state.dispose()    &#125;    class RenderObjectElement &#123;        +renderObject : RenderObject        +mount() createRenderObject + attachRenderObject        +update() updateRenderObject        +deactivate() detachRenderObject        +unmount() didUnmountRenderObject    &#125;    class LeafRenderObjectElement    class SingleChildRenderObjectElement    class MultiChildRenderObjectElement    Element &lt;|-- ComponentElement    Element &lt;|-- RenderObjectElement    ComponentElement &lt;|-- StatelessElement    ComponentElement &lt;|-- StatefulElement    RenderObjectElement &lt;|-- LeafRenderObjectElement    RenderObjectElement &lt;|-- SingleChildRenderObjectElement    RenderObjectElement &lt;|-- MultiChildRenderObjectElement
+
+Element 生命周期状态机stateDiagram-v2    [*] --&gt; initial : createElement()    initial --&gt; active : mount(parent, slot)    active --&gt; active : update(newWidget)    active --&gt; inactive : deactivate()    inactive --&gt; active : activate() GlobalKey复用    inactive --&gt; defunct : unmount()    defunct --&gt; [*]
+
+
+四、updateChild — 三树更新的核心调度updateChild 是 Element 更新子节点的核心方法，根据 Widget.canUpdate 的结果决定子 Element 的命运：
+flowchart TD    A[&quot;updateChild(child, newWidget, newSlot)&quot;] --&gt; B&#123;&quot;newWidget == null?&quot;&#125;    B --&gt;|是| C&#123;&quot;child != null?&quot;&#125;    C --&gt;|是| D[&quot;deactivateChild(child)&lt;br/&gt;子树卸载&quot;]    C --&gt;|否| E[&quot;return null 无操作&quot;]    B --&gt;|否| F&#123;&quot;child != null?&quot;&#125;    F --&gt;|是| G&#123;&quot;Widget.canUpdate?&lt;br/&gt;runtimeType+key 相同?&quot;&#125;    G --&gt;|是| H[&quot;child.update(newWidget)&lt;br/&gt;复用 Element&quot;]    G --&gt;|否| I[&quot;newChild = inflateWidget&lt;br/&gt;deactivateChild(old)&quot;]    F --&gt;|否| J[&quot;newChild = inflateWidget&lt;br/&gt;创建新 Element&quot;]    H --&gt; K[&quot;return child&quot;]    I --&gt; K    J --&gt; K
+
+核心代码// L3982: updateChild — 子 Element 更新调度Element? updateChild(Element? child, Widget? newWidget, dynamic newSlot) &#123;  if (newWidget == null) &#123;    if (child != null) deactivateChild(child);    return null;  &#125;  if (child != null) &#123;    if (Widget.canUpdate(child.widget, newWidget)) &#123;      child.update(newWidget);  // 复用      return child;    &#125;    deactivateChild(child);     // 卸载旧  &#125;  return inflateWidget(newWidget, newSlot);  // 创建新&#125;
+
+
+五、Element.mount 挂载流程flowchart TD    A[&quot;mount(parent, newSlot)&quot;] --&gt; A1[&quot;_parent = parent&quot;]    A1 --&gt; A2[&quot;_slot = newSlot&quot;]    A2 --&gt; A3[&quot;depth = parent.depth + 1&quot;]    A3 --&gt; A4[&quot;_owner = parent.owner&quot;]    A4 --&gt; A5[&quot;parent.updateChild(this, widget, slot)&quot;]
+
+ComponentElement.mountflowchart TD    B1[&quot;super.mount()&quot;] --&gt; B2[&quot;rebuild() → performRebuild()&quot;]    B2 --&gt; B3[&quot;StatelessElement: widget.build(this)&quot;]    B2 --&gt; B4[&quot;StatefulElement: state.initState() → state.build()&quot;]
+
+RenderObjectElement.mountflowchart TD    C1[&quot;super.mount()&quot;] --&gt; C2[&quot;_renderObject = widget.createRenderObject()&quot;]    C2 --&gt; C3[&quot;attachRenderObject(newSlot)&quot;]    C3 --&gt; C4[&quot;renderObject.attach(owner)&quot;]
+
+
+六、RenderObjectElement 与 RenderObject 的桥接flowchart TD    A[&quot;RenderObjectElement.mount()&quot;] --&gt; B[&quot;widget.createRenderObject(this)&quot;]    B --&gt; C[&quot;renderObject = 新 RenderObject&quot;]    C --&gt; D[&quot;attachRenderObject(newSlot)&quot;]    D --&gt; E[&quot;renderObject.attach(owner.pipelineOwner)&quot;]    F[&quot;RenderObjectElement.update(newWidget)&quot;] --&gt; G[&quot;super.update()&quot;]    G --&gt; H[&quot;widget.updateRenderObject(this, renderObject)&quot;]    I[&quot;RenderObjectElement.unmount()&quot;] --&gt; J[&quot;widget.didUnmountRenderObject(renderObject)&quot;]    J --&gt; K[&quot;renderObject.detach()&quot;]    K --&gt; L[&quot;owner.releaseRenderObject(renderObject)&quot;]
+
+
+七、BuildOwner 构建管理flowchart TD    A[&quot;BuildOwner&quot;] --&gt; B[&quot;_dirtyElements : List~Element~&quot;]    A --&gt; C[&quot;_globalKeyRegistry : Map~Key, Element~&quot;]    D[&quot;onBuildScheduled()&quot;] --&gt; E[&quot;ensureVisualUpdate()&quot;]    F[&quot;buildScope(context, callback)&quot;] --&gt; G[&quot;排序 _dirtyElements depth升序&quot;]    G --&gt; H[&quot;遍历 dirty Elements&quot;]    H --&gt; I[&quot;element.rebuild() → performRebuild()&quot;]    I --&gt; J[&quot;finalizeTree() → unmount 不可恢复的 Elements&quot;]
+
+
+八、完整帧构建流程flowchart TD    A[&quot;BuildOwner.buildScope()&quot;] --&gt; B[&quot;按 depth 升序排序 dirty Elements&quot;]    B --&gt; C[&quot;遍历每个 dirty Element&quot;]    C --&gt; D[&quot;element.rebuild()&quot;]    D --&gt; E[&quot;ComponentElement.performRebuild()&quot;]    E --&gt; F[&quot;built = build()&quot;]    F --&gt; G[&quot;updateChild(_child, built, slot)&quot;]    G --&gt; H&#123;&quot;Widget.canUpdate?&quot;&#125;    H --&gt;|复用| I[&quot;child.update(newWidget)&quot;]    H --&gt;|新建| J[&quot;inflateWidget → createElement → mount&quot;]    H --&gt;|卸载| K[&quot;deactivateChild → deactivate → unmount&quot;]    J --&gt; L[&quot;RenderObjectElement.mount&quot;]    L --&gt; M[&quot;createRenderObject → attachRenderObject&quot;]    I --&gt; N[&quot;RenderObjectElement.update&quot;]    N --&gt; O[&quot;updateRenderObject → markNeedsLayout/markNeedsPaint&quot;]
+
+
+九、StatefulElement 与 State 的交互flowchart TD    A[&quot;StatefulElement.mount()&quot;] --&gt; A1[&quot;super.mount()&quot;]    A1 --&gt; A2[&quot;_state = widget.createState()&quot;]    A2 --&gt; A3[&quot;_state._element = this&quot;]    A3 --&gt; A4[&quot;_state.initState()&quot;]    A4 --&gt; A5[&quot;rebuild() → _state.build()&quot;]    B[&quot;StatefulElement.update(newWidget)&quot;] --&gt; B1[&quot;_state.didUpdateWidget(oldWidget)&quot;]    B1 --&gt; B2[&quot;rebuild() → _state.build()&quot;]    C[&quot;setState(callback)&quot;] --&gt; C1[&quot;_element.markNeedsBuild()&quot;]    C1 --&gt; C2[&quot;BuildOwner.scheduleBuildFor(_element)&quot;]    C2 --&gt; C3[&quot;下一帧 buildScope → rebuild&quot;]    D[&quot;StatefulElement.deactivate()&quot;] --&gt; D1[&quot;_state.deactivate()&quot;]    E[&quot;StatefulElement.unmount()&quot;] --&gt; E1[&quot;_state.dispose()&quot;]
+
+
+十、关键调用链总结
+
+
+场景
+调用链
+
+
+
+首次构建
+mount() → rebuild() → build() → updateChild(null, built, slot) → inflateWidget() → createElement() → child.mount()
+
+
+Widget 更新
+markNeedsBuild() → buildScope() → rebuild() → build() → updateChild(old, built, slot) → canUpdate? update&#x2F;inflate
+
+
+Widget 替换
+canUpdate = false → deactivateChild() → inflateWidget() → 旧 Element deactivate → 新 Element mount
+
+
+State 更新
+setState() → markNeedsBuild() → 下一帧 rebuild() → build()
+
+
+Element 卸载
+deactivate() → 移入 _inactiveElements → unmount() → RenderObjectElement.unmount() → detachRenderObject()
+
+
+GlobalKey 复用
+inflateWidget() → globalKeyRegistry 查找 → 旧 Element deactivate → activate() 复用
+
+
+]]></content>
+      <categories>
+        <category>Flutter</category>
+      </categories>
+      <tags>
+        <tag>Flutter</tag>
+      </tags>
+  </entry>
+  <entry>
+    <title>国密汇总</title>
+    <url>/2023/09/05/%E5%9B%BD%E5%AF%86%E6%B1%87%E6%80%BB/</url>
+    <content><![CDATA[国产密码算法包括SM1、SM2、SM3、SM4和SM7。SM1 - 对称算法
+分组长度和密钥长度均为128位.
+该算法目前尚未公开.
+该算法的安全性和软硬件实现性能与AES算法相当.
+调用加密芯片的接口进行使用.
+
+SM2 - 非对称密钥算法
+加密强度为256位
+该算法是一种基于椭圆曲线（ECC）
+
+SM3 - 消息摘要
+https://www.oscca.gov.cn/sca/xxgk/2010-12/17/content_1002389.shtml
+
+
+密码杂凑算法消息分组长度 为 512b, 摘要长度 256b
+该算法为不可逆的算法， 具体算法是保密的。
+
+执行过程 &#x3D; &gt; 消息填充、消息扩展、迭代压缩
+SM4
+一种 Feistel 结构的分组密码算法，其分组长度和密钥长度均为128bit
+
+该算法为对称加密算法，其加密强度为128位 
+SM7该算法是一种分组密码算法，分组长度为128比特，密钥长度也为128比特。
+SM7适用于非接触式IC卡，应用包括身份识别类应用(门禁卡、工作证、参赛证)，票务类应用(大型赛事门票、展会门票)，支付与通卡类应用（积分消费卡、校园一卡通、企业一卡通等
+SM9SM9 主要用于用户的身份认证。SM9 算法不需要申请数字证书，适用于互联网应用的各种新兴应用的安全保障。
+]]></content>
+  </entry>
+  <entry>
+    <title>Flutter-框架初始化与帧循环深度解析</title>
+    <url>/2026/08/03/Flutter-%E6%A1%86%E6%9E%B6%E5%88%9D%E5%A7%8B%E5%8C%96%E4%B8%8E%E5%B8%A7%E5%BE%AA%E7%8E%AF%E6%B7%B1%E5%BA%A6%E8%A7%A3%E6%9E%90/</url>
+    <content><![CDATA[Flutter 框架初始化与帧循环深度解析
+源码路径：packages/flutter/lib/src/widgets/binding.dart
+
+一、WidgetsFlutterBinding — 七 Mixin 组合classDiagram    class WidgetsFlutterBinding &#123;        +ensureInitialized() WidgetsBinding static    &#125;    class BindingBase    class GestureBinding    class SchedulerBinding    class ServicesBinding    class PaintingBinding    class SemanticsBinding    class RendererBinding    class WidgetsBinding    WidgetsFlutterBinding --|&gt; BindingBase    WidgetsFlutterBinding ..|&gt; GestureBinding : with    WidgetsFlutterBinding ..|&gt; SchedulerBinding : with    WidgetsFlutterBinding ..|&gt; ServicesBinding : with    WidgetsFlutterBinding ..|&gt; PaintingBinding : with    WidgetsFlutterBinding ..|&gt; SemanticsBinding : with    WidgetsFlutterBinding ..|&gt; RendererBinding : with    WidgetsFlutterBinding ..|&gt; WidgetsBinding : with
+
+// L1819: 七 mixin 组合定义class WidgetsFlutterBinding extends BindingBase    with GestureBinding,         SchedulerBinding,         ServicesBinding,         PaintingBinding,         SemanticsBinding,         RendererBinding,         WidgetsBinding &#123;  static WidgetsBinding ensureInitialized() &#123;    if (_instance == null) WidgetsFlutterBinding();    return WidgetsBinding.instance;  &#125;&#125;
+
+
+二、runApp 启动全链路flowchart TD    A[&quot;runApp(app)&quot;] --&gt; B[&quot;WidgetsFlutterBinding.ensureInitialized()&quot;]    B --&gt; C[&quot;WidgetsFlutterBinding() 构造&quot;]    C --&gt; D[&quot;BindingBase() → initInstances × 7&quot;]    D --&gt; E[&quot;initServiceExtensions × 7&quot;]    E --&gt; F[&quot;_runWidget(binding.wrapWithDefaultView(app))&quot;]    F --&gt; G[&quot;scheduleAttachRootWidget(app)&quot;]    G --&gt; H[&quot;scheduleWarmUpFrame()&quot;]    H --&gt; I[&quot;首帧调度: handleBeginFrame → handleDrawFrame&quot;]
+
+核心代码// L1574: runApp 入口void runApp(Widget app) &#123;  final WidgetsBinding binding = WidgetsFlutterBinding.ensureInitialized();  _runWidget(binding.wrapWithDefaultView(app), binding, &#x27;runApp&#x27;);&#125;// L1639: _runWidgetvoid _runWidget(Widget app, WidgetsBinding binding, String debugMethodName) &#123;  binding.scheduleAttachRootWidget(app);  binding.scheduleWarmUpFrame();&#125;// L1840: ensureInitializedstatic WidgetsBinding ensureInitialized() &#123;  if (_instance == null) WidgetsFlutterBinding();  return WidgetsBinding.instance;&#125;
+
+
+三、WidgetsBinding.initInstances 初始化flowchart TD    A[&quot;WidgetsBinding.initInstances()&quot;] --&gt; B[&quot;super.initInstances()&quot;]    B --&gt; C[&quot;_instance = this&quot;]    C --&gt; D[&quot;buildOwner = BuildOwner()&quot;]    D --&gt; E[&quot;buildOwner.onBuildScheduled = _handleBuildScheduled&quot;]    E --&gt; F[&quot;注册栈帧过滤器&lt;br/&gt;ComponentElement/StatefulElement/...&quot;]    F --&gt; G[&quot;addPersistentFrameCallback(_drawFrame)&quot;]    G --&gt; H[&quot;initServiceExtensions()&quot;]
+
+核心代码// L537+: WidgetsBinding.initInstances@overridevoid initInstances() &#123;  super.initInstances();  _instance = this;  buildOwner = BuildOwner();  buildOwner!.onBuildScheduled = _handleBuildScheduled;  // 注册栈帧过滤器...  addPersistentFrameCallback(_drawFrame);  // 每帧回调&#125;// L1121: 构建调度void _handleBuildScheduled() &#123;  ensureVisualUpdate();  // 请求下一帧&#125;
+
+
+四、RootWidget.attach — 根挂载flowchart TD    A[&quot;RootWidget.attach(owner, element)&quot;] --&gt; B&#123;&quot;element == null?&lt;br/&gt;首次挂载?&quot;&#125;    B --&gt;|是| C[&quot;element = createElement() → RootElement&quot;]    C --&gt; D[&quot;owner.lockState(assignOwner)&quot;]    D --&gt; E[&quot;owner.buildScope(mount)&quot;]    B --&gt;|否| F[&quot;element.markNeedsBuild()&quot;]    F --&gt; G[&quot;下一帧 rebuild&quot;]
+
+核心代码// L1696: RootWidget.attachvoid attach(BuildOwner owner, Element? element) &#123;  if (element == null) &#123;    owner.lockState(() &#123;      final Element newElement = createElement();      newElement.assignOwner(owner);      owner.buildScope(newElement, () &#123;        newElement.mount(null, null);      &#125;);    &#125;);  &#125; else &#123;    element.markNeedsBuild();  &#125;&#125;
+
+
+五、RootElement 挂载与重建flowchart TD    A[&quot;RootElement.mount()&quot;] --&gt; B[&quot;super.mount()&quot;]    B --&gt; C[&quot;_rebuild()&quot;]    C --&gt; D[&quot;updateChild(null, widget.child, null)&quot;]    D --&gt; E[&quot;inflateWidget → createElement → mount&quot;]    F[&quot;RootElement.performRebuild()&quot;] --&gt; G&#123;&quot;_newWidget != null?&quot;&#125;    G --&gt;|有延迟更新| H[&quot;_child = updateChild(_child, _newWidget, ...)&quot;]    G --&gt;|无| I[&quot;_rebuild()&quot;]    H --&gt; J[&quot;_newWidget = null&quot;]
+
+
+六、drawFrame — 帧循环核心drawFrame 是每帧执行的核心回调，通过 addPersistentFrameCallback 注册到 SchedulerBinding。
+flowchart TD    A[&quot;drawFrame()&quot;] --&gt; B[&quot;buildOwner!.buildScope(rootElement!)&quot;]    B --&gt; C[&quot;构建 dirty Elements&quot;]    C --&gt; D[&quot;super.drawFrame()&quot;]    D --&gt; D1[&quot;RendererBinding.drawFrame()&quot;]    D1 --&gt; D2[&quot;pipelineOwner.flushLayout()&quot;]    D2 --&gt; D3[&quot;pipelineOwner.flushCompositingBits()&quot;]    D3 --&gt; D4[&quot;pipelineOwner.flushPaint()&quot;]    D4 --&gt; D5[&quot;pipelineOwner.flushSemantics()&quot;]    D5 --&gt; D6[&quot;renderView.compositeFrame()&quot;]    D6 --&gt; E[&quot;buildOwner!.finalizeTree()&quot;]    E --&gt; F[&quot;unmount 不可恢复的 inactive Elements&quot;]
+
+核心代码// L1227: WidgetsBinding.drawFrame@overridevoid drawFrame() &#123;  // ... 省略调试逻辑  try &#123;    if (renderViewElement != null) &#123;      buildOwner!.buildScope(renderViewElement!);  // 1. 构建    &#125;    super.drawFrame();  // 2. 布局+绘制+合成    // super.drawFrame() 调用链:    //   RendererBinding.drawFrame()    //     → pipelineOwner.flushLayout()    //     → pipelineOwner.flushCompositingBits()    //     → pipelineOwner.flushPaint()    //     → renderView.compositeFrame()  &#125; finally &#123;    buildOwner!.finalizeTree();  // 3. 清理  &#125;&#125;
+
+
+七、帧调度机制 — SchedulerBindingflowchart TD    A[&quot;Vsync 信号&quot;] --&gt; B[&quot;handleBeginFrame(rawTimeStamp)&quot;]    B --&gt; C[&quot;处理 transientCallbacks (_transientCallbacks)&quot;]    C --&gt; D[&quot;handleDrawFrame()&quot;]    D --&gt; E[&quot;处理 persistentCallbacks (_persistentCallbacks)&quot;]    E --&gt; F[&quot;drawFrame() — 帧循环核心&quot;]    F --&gt; G[&quot;处理 postFrameCallbacks (_postFrameCallbacks)&quot;]
+
+帧回调类型
+
+
+回调类型
+注册方法
+用途
+
+
+
+transientCallback
+addTransientFrameCallback
+一次性动画回调，帧后自动移除
+
+
+persistentCallback
+addPersistentFrameCallback
+持久回调，每帧执行（如 drawFrame）
+
+
+postFrameCallback
+addPostFrameCallback
+帧后回调，执行一次后自动移除
+
+
+
+八、scheduleAttachRootWidget — 异步根挂载flowchart TD    A[&quot;scheduleAttachRootWidget(rootWidget)&quot;] --&gt; B&#123;&quot;_rootElement != null?&quot;&#125;    B --&gt;|是| C[&quot;_rootElement.widget.child = rootWidget&lt;br/&gt;markNeedsBuild()&quot;]    B --&gt;|否| D[&quot;attachRootWidget(rootWidget)&quot;]    D --&gt; E[&quot;attachToBuildOwner(RootWidget(child: rootWidget))&quot;]    E --&gt; F[&quot;RootWidget.attach(owner, null)&quot;]    F --&gt; G[&quot;createElement() → RootElement&quot;]    G --&gt; H[&quot;assignOwner → buildScope(mount)&quot;]
+
+
+九、WidgetsBindingObserver 观察者接口classDiagram    class WidgetsBindingObserver &#123;        &lt;&lt;interface&gt;&gt;        +didPopRoute() bool        +didPushRoute(route) bool        +didPushRouteInformation(info) bool        +didChangeAppLifecycleState(state)        +didChangeMetrics()        +didChangeTextScaleFactor()        +didChangePlatformBrightness()        +didChangeLocales()        +didChangeAccessibilityFeatures()        +handleStartBackGesture() bool        +handleUpdateBackGesture(progress) bool        +handleCommitBackGesture() bool    &#125;
+
+注册&#x2F;注销观察者：
+// 注册WidgetsBinding.instance.addObserver(observer);// 注销WidgetsBinding.instance.removeObserver(observer);
+
+
+十、从 runApp 到首帧渲染完整流程flowchart TD    A[&quot;runApp(MyApp)&quot;] --&gt; B[&quot;WidgetsFlutterBinding.ensureInitialized()&quot;]    B --&gt; C[&quot;BindingBase 构造&quot;]    C --&gt; D[&quot;7个 Binding 的 initInstances&quot;]    D --&gt; E[&quot;7个 Binding 的 initServiceExtensions&quot;]    E --&gt; F[&quot;scheduleAttachRootWidget(wrapWithDefaultView(MyApp))&quot;]    F --&gt; G[&quot;scheduleWarmUpFrame()&quot;]    G --&gt; H[&quot;handleBeginFrame()&quot;]    H --&gt; I[&quot;handleDrawFrame()&quot;]    I --&gt; J[&quot;drawFrame()&quot;]    J --&gt; K[&quot;buildScope → RootElement.mount → _rebuild&quot;]    K --&gt; L[&quot;Widget Tree 构建 → Element Tree 构建&quot;]    L --&gt; M[&quot;RenderObjectElement.mount → createRenderObject&quot;]    M --&gt; N[&quot;flushLayout → flushCompositingBits → flushPaint&quot;]    N --&gt; O[&quot;首帧渲染完成&quot;]
+
+
+十一、关键调用链总结
+
+
+场景
+调用链
+
+
+
+应用启动
+runApp() → ensureInitialized() → initInstances() × 7 → scheduleAttachRootWidget() → scheduleWarmUpFrame()
+
+
+根挂载
+attachRootWidget() → RootWidget.attach() → createElement() → buildScope(mount)
+
+
+每帧循环
+Vsync → handleBeginFrame() → handleDrawFrame() → drawFrame() → buildScope + flushLayout + flushPaint
+
+
+构建调度
+setState() → markNeedsBuild() → onBuildScheduled() → ensureVisualUpdate() → 请求 Vsync
+
+
+帧三阶段
+1.buildScope构建 → 2.super.drawFrame()布局+绘制+合成 → 3.finalizeTree清理
+
+
+]]></content>
+      <categories>
+        <category>Flutter</category>
+      </categories>
+      <tags>
+        <tag>Flutter</tag>
+      </tags>
+  </entry>
+  <entry>
+    <title>思考-写怎样的代码看着舒服(Java/Kotlin)</title>
+    <url>/2023/08/31/%E6%80%9D%E8%80%83-%E5%86%99%E6%80%8E%E6%A0%B7%E7%9A%84%E4%BB%A3%E7%A0%81%E7%9C%8B%E7%9D%80%E8%88%92%E6%9C%8D/</url>
+    <content><![CDATA[看整齐条理的类文件代码 真的会少几条皱纹 
+在想写怎么样的代码会舒服
+深思熟虑问过各家AI后进行整合编码约定
+目前对应代码量比较多的是Java\Kotlin, 算是阅读量和编写量最多的语言, 汇总如下
+Java Class Layout属性变量
+
+静态&#x2F;常量变量
+私有&#x2F;公共成员变量（非静态变量）构造
+构造方法方法
+单例方法（如果有）
+公共&#x2F;私有方法(非静态)
+静态方法内部类
+静态&#x2F;内部类（如果有）
+
+Kotlin Class Layout
+https://kotlinlang.org/docs/coding-conventions.html#class-layout
+
+
+Property declarations and initializer blocks属性声明和初始值设定项块
+Secondary constructors辅助构造函数
+Method declarations方法声明
+Companion object伴随对象
+
+]]></content>
+  </entry>
+  <entry>
+    <title>并行&amp;并发 静心理解</title>
+    <url>/2024/08/23/%E5%B9%B6%E8%A1%8C-%E5%B9%B6%E5%8F%91-%E9%9D%99%E5%BF%83%E7%90%86%E8%A7%A3/</url>
+    <content><![CDATA[并行 &amp; 并发并行 ： 并行是指多个任务或者操作再同一时间点上同时执行.(前提是在支持多处理器机器及调度系统上)
+并发 ： 并发是指多个任务或操作在同一时间段内交替执行, 快速地在多个任务之间切换, 看起来像是同时进行的.
+并行 更依赖硬件TAG: 物理分离, 资源独立
+在每个核上独立执行一个任务, 更依赖硬件
+并发 更依赖系统TAG: 资源共享, 时间片, 上下文切换
+操作系统通过时间分片实现并发, 快速的在多个任务之间切换, 每个任务获得一小段CPU时间.  
+从物理层面了解并行: 多个任务在物理上同时进行, 需要多个处理器或多核处理器来实现
+并发: 多个任务在逻辑上同时进行, 实际是在单个处理器上通过快速切换来实现
+问题并行: 包括负载均衡、通信开销、数据一致性等。需要处理任务之间的同步和通信问题。此外，并行程序可能受到资源限制（如内存带宽、网络延迟等）的影响，导致性能不如预期。
+并发: 包括死锁、竞态条件、资源同步等。可以提高程序的响应性和吞吐量，但过多的上下文切换会增加系统开销，降低整体性能。
+]]></content>
+  </entry>
+  <entry>
     <title>内存泄漏/内存溢出</title>
     <url>/2024/11/15/%E5%86%85%E5%AD%98%E6%B3%84%E6%BC%8F-%E5%86%85%E5%AD%98%E6%BA%A2%E5%87%BA/</url>
     <content><![CDATA[一、内存泄漏 &amp; 内存溢出​	在软件开发与运行过程中，内存管理是一个至关重要的环节。然而，由于各种原因，如程序设计的缺陷或资源管理的不当，可能会导致两种常见的内存问题：内存泄漏（Memory Leak）和内存溢出（Memory Overflow）。各种语言&#x2F;操作系统上预防和解决也有不同方式方案,以下是关于两者概念的详细介绍：
@@ -1729,79 +1802,6 @@ LeakCanary原理分析
 如果 activity 没有被回收，先强制进行一次 gc，再来检查，如果 key 还存在 retainedKeys 中，说明 activity 不可回收，同时也说明了出现了内存泄漏。
 发生内存泄露之后，dump内存快照，分析 hprof 文件，找到泄露路径（使用 haha 库分析），发送到通知栏
 
-]]></content>
-  </entry>
-  <entry>
-    <title>国密汇总</title>
-    <url>/2023/09/05/%E5%9B%BD%E5%AF%86%E6%B1%87%E6%80%BB/</url>
-    <content><![CDATA[国产密码算法包括SM1、SM2、SM3、SM4和SM7。SM1 - 对称算法
-分组长度和密钥长度均为128位.
-该算法目前尚未公开.
-该算法的安全性和软硬件实现性能与AES算法相当.
-调用加密芯片的接口进行使用.
-
-SM2 - 非对称密钥算法
-加密强度为256位
-该算法是一种基于椭圆曲线（ECC）
-
-SM3 - 消息摘要
-https://www.oscca.gov.cn/sca/xxgk/2010-12/17/content_1002389.shtml
-
-
-密码杂凑算法消息分组长度 为 512b, 摘要长度 256b
-该算法为不可逆的算法， 具体算法是保密的。
-
-执行过程 &#x3D; &gt; 消息填充、消息扩展、迭代压缩
-SM4
-一种 Feistel 结构的分组密码算法，其分组长度和密钥长度均为128bit
-
-该算法为对称加密算法，其加密强度为128位 
-SM7该算法是一种分组密码算法，分组长度为128比特，密钥长度也为128比特。
-SM7适用于非接触式IC卡，应用包括身份识别类应用(门禁卡、工作证、参赛证)，票务类应用(大型赛事门票、展会门票)，支付与通卡类应用（积分消费卡、校园一卡通、企业一卡通等
-SM9SM9 主要用于用户的身份认证。SM9 算法不需要申请数字证书，适用于互联网应用的各种新兴应用的安全保障。
-]]></content>
-  </entry>
-  <entry>
-    <title>思考-写怎样的代码看着舒服(Java/Kotlin)</title>
-    <url>/2023/08/31/%E6%80%9D%E8%80%83-%E5%86%99%E6%80%8E%E6%A0%B7%E7%9A%84%E4%BB%A3%E7%A0%81%E7%9C%8B%E7%9D%80%E8%88%92%E6%9C%8D/</url>
-    <content><![CDATA[看整齐条理的类文件代码 真的会少几条皱纹 
-在想写怎么样的代码会舒服
-深思熟虑问过各家AI后进行整合编码约定
-目前对应代码量比较多的是Java\Kotlin, 算是阅读量和编写量最多的语言, 汇总如下
-Java Class Layout属性变量
-
-静态&#x2F;常量变量
-私有&#x2F;公共成员变量（非静态变量）构造
-构造方法方法
-单例方法（如果有）
-公共&#x2F;私有方法(非静态)
-静态方法内部类
-静态&#x2F;内部类（如果有）
-
-Kotlin Class Layout
-https://kotlinlang.org/docs/coding-conventions.html#class-layout
-
-
-Property declarations and initializer blocks属性声明和初始值设定项块
-Secondary constructors辅助构造函数
-Method declarations方法声明
-Companion object伴随对象
-
-]]></content>
-  </entry>
-  <entry>
-    <title>并行&amp;并发 静心理解</title>
-    <url>/2024/08/23/%E5%B9%B6%E8%A1%8C-%E5%B9%B6%E5%8F%91-%E9%9D%99%E5%BF%83%E7%90%86%E8%A7%A3/</url>
-    <content><![CDATA[并行 &amp; 并发并行 ： 并行是指多个任务或者操作再同一时间点上同时执行.(前提是在支持多处理器机器及调度系统上)
-并发 ： 并发是指多个任务或操作在同一时间段内交替执行, 快速地在多个任务之间切换, 看起来像是同时进行的.
-并行 更依赖硬件TAG: 物理分离, 资源独立
-在每个核上独立执行一个任务, 更依赖硬件
-并发 更依赖系统TAG: 资源共享, 时间片, 上下文切换
-操作系统通过时间分片实现并发, 快速的在多个任务之间切换, 每个任务获得一小段CPU时间.  
-从物理层面了解并行: 多个任务在物理上同时进行, 需要多个处理器或多核处理器来实现
-并发: 多个任务在逻辑上同时进行, 实际是在单个处理器上通过快速切换来实现
-问题并行: 包括负载均衡、通信开销、数据一致性等。需要处理任务之间的同步和通信问题。此外，并行程序可能受到资源限制（如内存带宽、网络延迟等）的影响，导致性能不如预期。
-并发: 包括死锁、竞态条件、资源同步等。可以提高程序的响应性和吞吐量，但过多的上下文切换会增加系统开销，降低整体性能。
 ]]></content>
   </entry>
 </search>
