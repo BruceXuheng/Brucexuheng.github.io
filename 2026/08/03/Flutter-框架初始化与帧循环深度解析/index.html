@@ -1,0 +1,255 @@
+<!DOCTYPE html><html lang="cn" data-theme="light"><head><meta charset="UTF-8"><meta http-equiv="X-UA-Compatible" content="IE=edge"><meta name="viewport" content="width=device-width, initial-scale=1.0,viewport-fit=cover"><title>Flutter-框架初始化与帧循环深度解析 | 旭恒呀</title><meta name="author" content="BruceXuheng"><meta name="copyright" content="BruceXuheng"><meta name="format-detection" content="telephone=no"><meta name="theme-color" content="#ffffff"><meta name="description" content="Flutter 框架初始化与帧循环深度解析 源码路径：packages&#x2F;flutter&#x2F;lib&#x2F;src&#x2F;widgets&#x2F;binding.dart  一、WidgetsFlutterBinding — 七 Mixin 组合123456789101112131415161718192021classDiagram    class WidgetsFlutterBinding &#123;">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Flutter-框架初始化与帧循环深度解析">
+<meta property="og:url" content="https://brucexuheng.github.io/2026/08/03/Flutter-%E6%A1%86%E6%9E%B6%E5%88%9D%E5%A7%8B%E5%8C%96%E4%B8%8E%E5%B8%A7%E5%BE%AA%E7%8E%AF%E6%B7%B1%E5%BA%A6%E8%A7%A3%E6%9E%90/index.html">
+<meta property="og:site_name" content="旭恒呀">
+<meta property="og:description" content="Flutter 框架初始化与帧循环深度解析 源码路径：packages&#x2F;flutter&#x2F;lib&#x2F;src&#x2F;widgets&#x2F;binding.dart  一、WidgetsFlutterBinding — 七 Mixin 组合123456789101112131415161718192021classDiagram    class WidgetsFlutterBinding &#123;">
+<meta property="og:locale">
+<meta property="og:image" content="https://brucexuheng.github.io/img/head_sculpture.png">
+<meta property="article:published_time" content="2026-08-03T03:31:50.000Z">
+<meta property="article:modified_time" content="2026-08-03T09:07:27.777Z">
+<meta property="article:author" content="BruceXuheng">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="https://brucexuheng.github.io/img/head_sculpture.png"><script type="application/ld+json">{
+  "@context": "https://schema.org",
+  "@type": "BlogPosting",
+  "headline": "Flutter-框架初始化与帧循环深度解析",
+  "url": "https://brucexuheng.github.io/2026/08/03/Flutter-%E6%A1%86%E6%9E%B6%E5%88%9D%E5%A7%8B%E5%8C%96%E4%B8%8E%E5%B8%A7%E5%BE%AA%E7%8E%AF%E6%B7%B1%E5%BA%A6%E8%A7%A3%E6%9E%90/",
+  "image": "https://brucexuheng.github.io/img/head_sculpture.png",
+  "datePublished": "2026-08-03T03:31:50.000Z",
+  "dateModified": "2026-08-03T09:07:27.777Z",
+  "author": [
+    {
+      "@type": "Person",
+      "name": "BruceXuheng",
+      "url": "https://brucexuheng.github.io"
+    }
+  ]
+}</script><link rel="shortcut icon" href="/img/favicon.png"><link rel="canonical" href="https://brucexuheng.github.io/2026/08/03/Flutter-%E6%A1%86%E6%9E%B6%E5%88%9D%E5%A7%8B%E5%8C%96%E4%B8%8E%E5%B8%A7%E5%BE%AA%E7%8E%AF%E6%B7%B1%E5%BA%A6%E8%A7%A3%E6%9E%90/index.html"><link rel="preconnect" href="//cdn.jsdelivr.net"/><link rel="preconnect" href="//busuanzi.ibruce.info"/><link rel="stylesheet" href="/css/index.css?v=5.5.1"><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@7.1.0/css/all.min.css"><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fancyapps/ui@6.0.33/dist/fancybox/fancybox.min.css" media="print" onload="this.media='all'"><script>
+    (() => {
+      
+    const saveToLocal = {
+      set: (key, value, ttl) => {
+        if (!ttl) return
+        const expiry = Date.now() + ttl * 86400000
+        localStorage.setItem(key, JSON.stringify({ value, expiry }))
+      },
+      get: key => {
+        const itemStr = localStorage.getItem(key)
+        if (!itemStr) return undefined
+        const { value, expiry } = JSON.parse(itemStr)
+        if (Date.now() > expiry) {
+          localStorage.removeItem(key)
+          return undefined
+        }
+        return value
+      }
+    }
+
+    window.btf = {
+      saveToLocal,
+      getScript: (url, attr = {}) => new Promise((resolve, reject) => {
+        const script = document.createElement('script')
+        script.src = url
+        script.async = true
+        Object.entries(attr).forEach(([key, val]) => script.setAttribute(key, val))
+        script.onload = script.onreadystatechange = () => {
+          if (!script.readyState || /loaded|complete/.test(script.readyState)) resolve()
+        }
+        script.onerror = reject
+        document.head.appendChild(script)
+      }),
+      getCSS: (url, id) => new Promise((resolve, reject) => {
+        const link = document.createElement('link')
+        link.rel = 'stylesheet'
+        link.href = url
+        if (id) link.id = id
+        link.onload = link.onreadystatechange = () => {
+          if (!link.readyState || /loaded|complete/.test(link.readyState)) resolve()
+        }
+        link.onerror = reject
+        document.head.appendChild(link)
+      }),
+      addGlobalFn: (key, fn, name = false, parent = window) => {
+        if (!false && key.startsWith('pjax')) return
+        const globalFn = parent.globalFn || {}
+        globalFn[key] = globalFn[key] || {}
+        globalFn[key][name || Object.keys(globalFn[key]).length] = fn
+        parent.globalFn = globalFn
+      }
+    }
+  
+      
+      const activateDarkMode = () => {
+        document.documentElement.setAttribute('data-theme', 'dark')
+        if (document.querySelector('meta[name="theme-color"]') !== null) {
+          document.querySelector('meta[name="theme-color"]').setAttribute('content', '#0d0d0d')
+        }
+      }
+      const activateLightMode = () => {
+        document.documentElement.setAttribute('data-theme', 'light')
+        if (document.querySelector('meta[name="theme-color"]') !== null) {
+          document.querySelector('meta[name="theme-color"]').setAttribute('content', '#ffffff')
+        }
+      }
+
+      btf.activateDarkMode = activateDarkMode
+      btf.activateLightMode = activateLightMode
+
+      const theme = saveToLocal.get('theme')
+    
+          theme === 'dark' ? activateDarkMode() : theme === 'light' ? activateLightMode() : null
+        
+      
+      
+    const detectApple = () => {
+      if (/iPad|iPhone|iPod|Macintosh/.test(navigator.userAgent)) {
+        document.documentElement.classList.add('apple')
+      }
+    }
+    detectApple()
+  
+    })()
+  </script><script>const GLOBAL_CONFIG = {
+  root: '/',
+  algolia: undefined,
+  localSearch: {"path":"/search.xml","preload":false,"top_n_per_article":1,"unescape":false,"pagination":{"enable":false,"hitsPerPage":8},"languages":{"hits_empty":"No results found for: ${query}","hits_stats":"${hits} articles found"}},
+  translate: undefined,
+  highlight: {"plugin":"highlight.js","highlightCopy":true,"highlightLang":true,"highlightHeightLimit":200,"highlightFullpage":false,"highlightMacStyle":true},
+  copy: {
+    success: 'Copy Successful',
+    error: 'Copy Failed',
+    noSupport: 'Browser Not Supported'
+  },
+  relativeDate: {
+    homepage: false,
+    post: false
+  },
+  runtime: '',
+  dateSuffix: {
+    just: 'Just now',
+    min: 'minutes ago',
+    hour: 'hours ago',
+    day: 'days ago',
+    month: 'months ago'
+  },
+  copyright: undefined,
+  lightbox: 'fancybox',
+  Snackbar: undefined,
+  infinitegrid: {
+    js: 'https://cdn.jsdelivr.net/npm/@egjs/infinitegrid@4.12.0/dist/infinitegrid.min.js',
+    buttonText: 'Load More'
+  },
+  isPhotoFigcaption: false,
+  islazyloadPlugin: false,
+  isAnchor: false,
+  percent: {
+    toc: true,
+    rightside: false,
+  },
+  autoDarkmode: false
+}</script><script id="config-diff">var GLOBAL_CONFIG_SITE = {
+  title: 'Flutter-框架初始化与帧循环深度解析',
+  isHighlightShrink: false,
+  isToc: true,
+  pageType: 'post'
+}</script><meta name="generator" content="Hexo 8.1.2"></head><body><div id="sidebar"><div id="menu-mask"></div><div id="sidebar-menus"><div class="avatar-img text-center"><img src="/img/head_sculpture.png" onerror="this.onerror=null;this.src='/img/friend_404.gif'" alt="avatar"/></div><div class="site-data text-center"><a href="/archives/"><div class="headline">Articles</div><div class="length-num">14</div></a><a href="/tags/"><div class="headline">Tags</div><div class="length-num">5</div></a><a href="/categories/"><div class="headline">Categories</div><div class="length-num">3</div></a></div><div class="menus_items"><div class="menus_item"><a class="site-page" href="/"><i class="fa-fw fas fa-home"></i><span> 主页</span></a></div><div class="menus_item"><a class="site-page" href="/categories/"><i class="fa-fw fas fa-folder-open"></i><span> 分类</span></a></div><div class="menus_item"><a class="site-page" href="/tags/"><i class="fa-fw fas fa-tags"></i><span> 标签</span></a></div><div class="menus_item"><a class="site-page" href="/archives/"><i class="fa-fw fas fa-archive"></i><span> 归档</span></a></div></div></div></div><div class="post" id="body-wrap"><header class="post-bg" id="page-header"><nav id="nav"><span id="blog-info"><a class="nav-site-title" href="/"><span class="site-name">旭恒呀</span></a><a class="nav-page-title" href="/"><span class="site-name">Flutter-框架初始化与帧循环深度解析</span><span class="site-name"><i class="fa-solid fa-circle-arrow-left"></i><span>  Back to Home</span></span></a></span><div id="menus"><div id="search-button"><span class="site-page social-icon search"><i class="fas fa-search fa-fw"></i><span> Search</span></span></div><div class="menus_items"><div class="menus_item"><a class="site-page" href="/"><i class="fa-fw fas fa-home"></i><span> 主页</span></a></div><div class="menus_item"><a class="site-page" href="/categories/"><i class="fa-fw fas fa-folder-open"></i><span> 分类</span></a></div><div class="menus_item"><a class="site-page" href="/tags/"><i class="fa-fw fas fa-tags"></i><span> 标签</span></a></div><div class="menus_item"><a class="site-page" href="/archives/"><i class="fa-fw fas fa-archive"></i><span> 归档</span></a></div></div><div id="toggle-menu"><span class="site-page"><i class="fas fa-bars fa-fw"></i></span></div></div></nav><div id="post-info"><h1 class="post-title">Flutter-框架初始化与帧循环深度解析</h1><div id="post-meta"><div class="meta-firstline"><span class="post-meta-date"><i class="far fa-calendar-alt fa-fw post-meta-icon"></i><span class="post-meta-label">Created</span><time class="post-meta-date-created" datetime="2026-08-03T03:31:50.000Z" title="Created 2026-08-03 11:31:50">2026-08-03</time><span class="post-meta-separator">|</span><i class="fas fa-history fa-fw post-meta-icon"></i><span class="post-meta-label">Updated</span><time class="post-meta-date-updated" datetime="2026-08-03T09:07:27.777Z" title="Updated 2026-08-03 17:07:27">2026-08-03</time></span></div><div class="meta-secondline"><span class="post-meta-separator">|</span><span class="post-meta-pv-cv" id="" data-flag-title=""><i class="far fa-eye fa-fw post-meta-icon"></i><span class="post-meta-label">Post Views:</span><span id="busuanzi_value_page_pv"><i class="fa-solid fa-spinner fa-spin"></i></span></span></div></div></div></header><main class="layout" id="content-inner"><div id="post"><article class="container post-content" id="article-container"><h1 id="Flutter-框架初始化与帧循环深度解析"><a href="#Flutter-框架初始化与帧循环深度解析" class="headerlink" title="Flutter 框架初始化与帧循环深度解析"></a>Flutter 框架初始化与帧循环深度解析</h1><blockquote>
+<p>源码路径：<code>packages/flutter/lib/src/widgets/binding.dart</code></p>
+</blockquote>
+<h2 id="一、WidgetsFlutterBinding-—-七-Mixin-组合"><a href="#一、WidgetsFlutterBinding-—-七-Mixin-组合" class="headerlink" title="一、WidgetsFlutterBinding — 七 Mixin 组合"></a>一、WidgetsFlutterBinding — 七 Mixin 组合</h2><figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br></pre></td><td class="code"><pre><code class="hljs mermaid">classDiagram<br>    class WidgetsFlutterBinding &#123;<br>        +ensureInitialized() WidgetsBinding static<br>    &#125;<br>    class BindingBase<br>    class GestureBinding<br>    class SchedulerBinding<br>    class ServicesBinding<br>    class PaintingBinding<br>    class SemanticsBinding<br>    class RendererBinding<br>    class WidgetsBinding<br><br>    WidgetsFlutterBinding --|&gt; BindingBase<br>    WidgetsFlutterBinding ..|&gt; GestureBinding : with<br>    WidgetsFlutterBinding ..|&gt; SchedulerBinding : with<br>    WidgetsFlutterBinding ..|&gt; ServicesBinding : with<br>    WidgetsFlutterBinding ..|&gt; PaintingBinding : with<br>    WidgetsFlutterBinding ..|&gt; SemanticsBinding : with<br>    WidgetsFlutterBinding ..|&gt; RendererBinding : with<br>    WidgetsFlutterBinding ..|&gt; WidgetsBinding : with<br></code></pre></td></tr></table></figure>
+
+<figure class="highlight dart"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br></pre></td><td class="code"><pre><code class="hljs dart"><span class="hljs-comment">// L1819: 七 mixin 组合定义</span><br><span class="hljs-class"><span class="hljs-keyword">class</span> <span class="hljs-title">WidgetsFlutterBinding</span> <span class="hljs-keyword">extends</span> <span class="hljs-title">BindingBase</span></span><br><span class="hljs-class">    <span class="hljs-title">with</span> <span class="hljs-title">GestureBinding</span>,</span><br><span class="hljs-class">         <span class="hljs-title">SchedulerBinding</span>,</span><br><span class="hljs-class">         <span class="hljs-title">ServicesBinding</span>,</span><br><span class="hljs-class">         <span class="hljs-title">PaintingBinding</span>,</span><br><span class="hljs-class">         <span class="hljs-title">SemanticsBinding</span>,</span><br><span class="hljs-class">         <span class="hljs-title">RendererBinding</span>,</span><br><span class="hljs-class">         <span class="hljs-title">WidgetsBinding</span> </span>&#123;<br>  <span class="hljs-keyword">static</span> WidgetsBinding ensureInitialized() &#123;<br>    <span class="hljs-keyword">if</span> (_instance == <span class="hljs-keyword">null</span>) WidgetsFlutterBinding();<br>    <span class="hljs-keyword">return</span> WidgetsBinding.instance;<br>  &#125;<br>&#125;<br></code></pre></td></tr></table></figure>
+
+<hr>
+<h2 id="二、runApp-启动全链路"><a href="#二、runApp-启动全链路" class="headerlink" title="二、runApp 启动全链路"></a>二、runApp 启动全链路</h2><figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br></pre></td><td class="code"><pre><code class="hljs mermaid">flowchart TD<br>    A[&quot;runApp(app)&quot;] --&gt; B[&quot;WidgetsFlutterBinding.ensureInitialized()&quot;]<br>    B --&gt; C[&quot;WidgetsFlutterBinding() 构造&quot;]<br>    C --&gt; D[&quot;BindingBase() → initInstances × 7&quot;]<br>    D --&gt; E[&quot;initServiceExtensions × 7&quot;]<br>    E --&gt; F[&quot;_runWidget(binding.wrapWithDefaultView(app))&quot;]<br>    F --&gt; G[&quot;scheduleAttachRootWidget(app)&quot;]<br>    G --&gt; H[&quot;scheduleWarmUpFrame()&quot;]<br>    H --&gt; I[&quot;首帧调度: handleBeginFrame → handleDrawFrame&quot;]<br></code></pre></td></tr></table></figure>
+
+<h3 id="核心代码"><a href="#核心代码" class="headerlink" title="核心代码"></a>核心代码</h3><figure class="highlight dart"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br></pre></td><td class="code"><pre><code class="hljs dart"><span class="hljs-comment">// L1574: runApp 入口</span><br><span class="hljs-keyword">void</span> runApp(Widget app) &#123;<br>  <span class="hljs-keyword">final</span> WidgetsBinding binding = WidgetsFlutterBinding.ensureInitialized();<br>  _runWidget(binding.wrapWithDefaultView(app), binding, <span class="hljs-string">&#x27;runApp&#x27;</span>);<br>&#125;<br><br><span class="hljs-comment">// L1639: _runWidget</span><br><span class="hljs-keyword">void</span> _runWidget(Widget app, WidgetsBinding binding, <span class="hljs-built_in">String</span> debugMethodName) &#123;<br>  binding.scheduleAttachRootWidget(app);<br>  binding.scheduleWarmUpFrame();<br>&#125;<br><br><span class="hljs-comment">// L1840: ensureInitialized</span><br><span class="hljs-keyword">static</span> WidgetsBinding ensureInitialized() &#123;<br>  <span class="hljs-keyword">if</span> (_instance == <span class="hljs-keyword">null</span>) WidgetsFlutterBinding();<br>  <span class="hljs-keyword">return</span> WidgetsBinding.instance;<br>&#125;<br></code></pre></td></tr></table></figure>
+
+<hr>
+<h2 id="三、WidgetsBinding-initInstances-初始化"><a href="#三、WidgetsBinding-initInstances-初始化" class="headerlink" title="三、WidgetsBinding.initInstances 初始化"></a>三、WidgetsBinding.initInstances 初始化</h2><figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><code class="hljs mermaid">flowchart TD<br>    A[&quot;WidgetsBinding.initInstances()&quot;] --&gt; B[&quot;super.initInstances()&quot;]<br>    B --&gt; C[&quot;_instance = this&quot;]<br>    C --&gt; D[&quot;buildOwner = BuildOwner()&quot;]<br>    D --&gt; E[&quot;buildOwner.onBuildScheduled = _handleBuildScheduled&quot;]<br>    E --&gt; F[&quot;注册栈帧过滤器&lt;br/&gt;ComponentElement/StatefulElement/...&quot;]<br>    F --&gt; G[&quot;addPersistentFrameCallback(_drawFrame)&quot;]<br>    G --&gt; H[&quot;initServiceExtensions()&quot;]<br></code></pre></td></tr></table></figure>
+
+<h3 id="核心代码-1"><a href="#核心代码-1" class="headerlink" title="核心代码"></a>核心代码</h3><figure class="highlight dart"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br></pre></td><td class="code"><pre><code class="hljs dart"><span class="hljs-comment">// L537+: WidgetsBinding.initInstances</span><br><span class="hljs-meta">@override</span><br><span class="hljs-keyword">void</span> initInstances() &#123;<br>  <span class="hljs-keyword">super</span>.initInstances();<br>  _instance = <span class="hljs-keyword">this</span>;<br>  buildOwner = BuildOwner();<br>  buildOwner!.onBuildScheduled = _handleBuildScheduled;<br>  <span class="hljs-comment">// 注册栈帧过滤器...</span><br>  addPersistentFrameCallback(_drawFrame);  <span class="hljs-comment">// 每帧回调</span><br>&#125;<br><br><span class="hljs-comment">// L1121: 构建调度</span><br><span class="hljs-keyword">void</span> _handleBuildScheduled() &#123;<br>  ensureVisualUpdate();  <span class="hljs-comment">// 请求下一帧</span><br>&#125;<br></code></pre></td></tr></table></figure>
+
+<hr>
+<h2 id="四、RootWidget-attach-—-根挂载"><a href="#四、RootWidget-attach-—-根挂载" class="headerlink" title="四、RootWidget.attach — 根挂载"></a>四、RootWidget.attach — 根挂载</h2><figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><code class="hljs mermaid">flowchart TD<br>    A[&quot;RootWidget.attach(owner, element)&quot;] --&gt; B&#123;&quot;element == null?&lt;br/&gt;首次挂载?&quot;&#125;<br>    B --&gt;|是| C[&quot;element = createElement() → RootElement&quot;]<br>    C --&gt; D[&quot;owner.lockState(assignOwner)&quot;]<br>    D --&gt; E[&quot;owner.buildScope(mount)&quot;]<br>    B --&gt;|否| F[&quot;element.markNeedsBuild()&quot;]<br>    F --&gt; G[&quot;下一帧 rebuild&quot;]<br></code></pre></td></tr></table></figure>
+
+<h3 id="核心代码-2"><a href="#核心代码-2" class="headerlink" title="核心代码"></a>核心代码</h3><figure class="highlight dart"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br></pre></td><td class="code"><pre><code class="hljs dart"><span class="hljs-comment">// L1696: RootWidget.attach</span><br><span class="hljs-keyword">void</span> attach(BuildOwner owner, <span class="hljs-built_in">Element?</span> element) &#123;<br>  <span class="hljs-keyword">if</span> (element == <span class="hljs-keyword">null</span>) &#123;<br>    owner.lockState(() &#123;<br>      <span class="hljs-keyword">final</span> <span class="hljs-built_in">Element</span> newElement = createElement();<br>      newElement.assignOwner(owner);<br>      owner.buildScope(newElement, () &#123;<br>        newElement.mount(<span class="hljs-keyword">null</span>, <span class="hljs-keyword">null</span>);<br>      &#125;);<br>    &#125;);<br>  &#125; <span class="hljs-keyword">else</span> &#123;<br>    element.markNeedsBuild();<br>  &#125;<br>&#125;<br></code></pre></td></tr></table></figure>
+
+<hr>
+<h2 id="五、RootElement-挂载与重建"><a href="#五、RootElement-挂载与重建" class="headerlink" title="五、RootElement 挂载与重建"></a>五、RootElement 挂载与重建</h2><figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br></pre></td><td class="code"><pre><code class="hljs mermaid">flowchart TD<br>    A[&quot;RootElement.mount()&quot;] --&gt; B[&quot;super.mount()&quot;]<br>    B --&gt; C[&quot;_rebuild()&quot;]<br>    C --&gt; D[&quot;updateChild(null, widget.child, null)&quot;]<br>    D --&gt; E[&quot;inflateWidget → createElement → mount&quot;]<br><br>    F[&quot;RootElement.performRebuild()&quot;] --&gt; G&#123;&quot;_newWidget != null?&quot;&#125;<br>    G --&gt;|有延迟更新| H[&quot;_child = updateChild(_child, _newWidget, ...)&quot;]<br>    G --&gt;|无| I[&quot;_rebuild()&quot;]<br>    H --&gt; J[&quot;_newWidget = null&quot;]<br></code></pre></td></tr></table></figure>
+
+<hr>
+<h2 id="六、drawFrame-—-帧循环核心"><a href="#六、drawFrame-—-帧循环核心" class="headerlink" title="六、drawFrame — 帧循环核心"></a>六、drawFrame — 帧循环核心</h2><p><code>drawFrame</code> 是每帧执行的核心回调，通过 <code>addPersistentFrameCallback</code> 注册到 SchedulerBinding。</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br></pre></td><td class="code"><pre><code class="hljs mermaid">flowchart TD<br>    A[&quot;drawFrame()&quot;] --&gt; B[&quot;buildOwner!.buildScope(rootElement!)&quot;]<br>    B --&gt; C[&quot;构建 dirty Elements&quot;]<br>    C --&gt; D[&quot;super.drawFrame()&quot;]<br>    D --&gt; D1[&quot;RendererBinding.drawFrame()&quot;]<br>    D1 --&gt; D2[&quot;pipelineOwner.flushLayout()&quot;]<br>    D2 --&gt; D3[&quot;pipelineOwner.flushCompositingBits()&quot;]<br>    D3 --&gt; D4[&quot;pipelineOwner.flushPaint()&quot;]<br>    D4 --&gt; D5[&quot;pipelineOwner.flushSemantics()&quot;]<br>    D5 --&gt; D6[&quot;renderView.compositeFrame()&quot;]<br>    D6 --&gt; E[&quot;buildOwner!.finalizeTree()&quot;]<br>    E --&gt; F[&quot;unmount 不可恢复的 inactive Elements&quot;]<br></code></pre></td></tr></table></figure>
+
+<h3 id="核心代码-3"><a href="#核心代码-3" class="headerlink" title="核心代码"></a>核心代码</h3><figure class="highlight dart"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br></pre></td><td class="code"><pre><code class="hljs dart"><span class="hljs-comment">// L1227: WidgetsBinding.drawFrame</span><br><span class="hljs-meta">@override</span><br><span class="hljs-keyword">void</span> drawFrame() &#123;<br>  <span class="hljs-comment">// ... 省略调试逻辑</span><br>  <span class="hljs-keyword">try</span> &#123;<br>    <span class="hljs-keyword">if</span> (renderViewElement != <span class="hljs-keyword">null</span>) &#123;<br>      buildOwner!.buildScope(renderViewElement!);  <span class="hljs-comment">// 1. 构建</span><br>    &#125;<br>    <span class="hljs-keyword">super</span>.drawFrame();  <span class="hljs-comment">// 2. 布局+绘制+合成</span><br>    <span class="hljs-comment">// super.drawFrame() 调用链:</span><br>    <span class="hljs-comment">//   RendererBinding.drawFrame()</span><br>    <span class="hljs-comment">//     → pipelineOwner.flushLayout()</span><br>    <span class="hljs-comment">//     → pipelineOwner.flushCompositingBits()</span><br>    <span class="hljs-comment">//     → pipelineOwner.flushPaint()</span><br>    <span class="hljs-comment">//     → renderView.compositeFrame()</span><br>  &#125; <span class="hljs-keyword">finally</span> &#123;<br>    buildOwner!.finalizeTree();  <span class="hljs-comment">// 3. 清理</span><br>  &#125;<br>&#125;<br></code></pre></td></tr></table></figure>
+
+<hr>
+<h2 id="七、帧调度机制-—-SchedulerBinding"><a href="#七、帧调度机制-—-SchedulerBinding" class="headerlink" title="七、帧调度机制 — SchedulerBinding"></a>七、帧调度机制 — SchedulerBinding</h2><figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><code class="hljs mermaid">flowchart TD<br>    A[&quot;Vsync 信号&quot;] --&gt; B[&quot;handleBeginFrame(rawTimeStamp)&quot;]<br>    B --&gt; C[&quot;处理 transientCallbacks (_transientCallbacks)&quot;]<br>    C --&gt; D[&quot;handleDrawFrame()&quot;]<br>    D --&gt; E[&quot;处理 persistentCallbacks (_persistentCallbacks)&quot;]<br>    E --&gt; F[&quot;drawFrame() — 帧循环核心&quot;]<br>    F --&gt; G[&quot;处理 postFrameCallbacks (_postFrameCallbacks)&quot;]<br></code></pre></td></tr></table></figure>
+
+<h3 id="帧回调类型"><a href="#帧回调类型" class="headerlink" title="帧回调类型"></a>帧回调类型</h3><table>
+<thead>
+<tr>
+<th>回调类型</th>
+<th>注册方法</th>
+<th>用途</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>transientCallback</td>
+<td><code>addTransientFrameCallback</code></td>
+<td>一次性动画回调，帧后自动移除</td>
+</tr>
+<tr>
+<td>persistentCallback</td>
+<td><code>addPersistentFrameCallback</code></td>
+<td>持久回调，每帧执行（如 drawFrame）</td>
+</tr>
+<tr>
+<td>postFrameCallback</td>
+<td><code>addPostFrameCallback</code></td>
+<td>帧后回调，执行一次后自动移除</td>
+</tr>
+</tbody></table>
+<hr>
+<h2 id="八、scheduleAttachRootWidget-—-异步根挂载"><a href="#八、scheduleAttachRootWidget-—-异步根挂载" class="headerlink" title="八、scheduleAttachRootWidget — 异步根挂载"></a>八、scheduleAttachRootWidget — 异步根挂载</h2><figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><code class="hljs mermaid">flowchart TD<br>    A[&quot;scheduleAttachRootWidget(rootWidget)&quot;] --&gt; B&#123;&quot;_rootElement != null?&quot;&#125;<br>    B --&gt;|是| C[&quot;_rootElement.widget.child = rootWidget&lt;br/&gt;markNeedsBuild()&quot;]<br>    B --&gt;|否| D[&quot;attachRootWidget(rootWidget)&quot;]<br>    D --&gt; E[&quot;attachToBuildOwner(RootWidget(child: rootWidget))&quot;]<br>    E --&gt; F[&quot;RootWidget.attach(owner, null)&quot;]<br>    F --&gt; G[&quot;createElement() → RootElement&quot;]<br>    G --&gt; H[&quot;assignOwner → buildScope(mount)&quot;]<br></code></pre></td></tr></table></figure>
+
+<hr>
+<h2 id="九、WidgetsBindingObserver-观察者接口"><a href="#九、WidgetsBindingObserver-观察者接口" class="headerlink" title="九、WidgetsBindingObserver 观察者接口"></a>九、WidgetsBindingObserver 观察者接口</h2><figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br></pre></td><td class="code"><pre><code class="hljs mermaid">classDiagram<br>    class WidgetsBindingObserver &#123;<br>        &lt;&lt;interface&gt;&gt;<br>        +didPopRoute() bool<br>        +didPushRoute(route) bool<br>        +didPushRouteInformation(info) bool<br>        +didChangeAppLifecycleState(state)<br>        +didChangeMetrics()<br>        +didChangeTextScaleFactor()<br>        +didChangePlatformBrightness()<br>        +didChangeLocales()<br>        +didChangeAccessibilityFeatures()<br>        +handleStartBackGesture() bool<br>        +handleUpdateBackGesture(progress) bool<br>        +handleCommitBackGesture() bool<br>    &#125;<br></code></pre></td></tr></table></figure>
+
+<p>注册&#x2F;注销观察者：</p>
+<figure class="highlight dart"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><code class="hljs dart"><span class="hljs-comment">// 注册</span><br>WidgetsBinding.instance.addObserver(observer);<br><span class="hljs-comment">// 注销</span><br>WidgetsBinding.instance.removeObserver(observer);<br></code></pre></td></tr></table></figure>
+
+<hr>
+<h2 id="十、从-runApp-到首帧渲染完整流程"><a href="#十、从-runApp-到首帧渲染完整流程" class="headerlink" title="十、从 runApp 到首帧渲染完整流程"></a>十、从 runApp 到首帧渲染完整流程</h2><figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br></pre></td><td class="code"><pre><code class="hljs mermaid">flowchart TD<br>    A[&quot;runApp(MyApp)&quot;] --&gt; B[&quot;WidgetsFlutterBinding.ensureInitialized()&quot;]<br>    B --&gt; C[&quot;BindingBase 构造&quot;]<br>    C --&gt; D[&quot;7个 Binding 的 initInstances&quot;]<br>    D --&gt; E[&quot;7个 Binding 的 initServiceExtensions&quot;]<br>    E --&gt; F[&quot;scheduleAttachRootWidget(wrapWithDefaultView(MyApp))&quot;]<br>    F --&gt; G[&quot;scheduleWarmUpFrame()&quot;]<br>    G --&gt; H[&quot;handleBeginFrame()&quot;]<br>    H --&gt; I[&quot;handleDrawFrame()&quot;]<br>    I --&gt; J[&quot;drawFrame()&quot;]<br>    J --&gt; K[&quot;buildScope → RootElement.mount → _rebuild&quot;]<br>    K --&gt; L[&quot;Widget Tree 构建 → Element Tree 构建&quot;]<br>    L --&gt; M[&quot;RenderObjectElement.mount → createRenderObject&quot;]<br>    M --&gt; N[&quot;flushLayout → flushCompositingBits → flushPaint&quot;]<br>    N --&gt; O[&quot;首帧渲染完成&quot;]<br></code></pre></td></tr></table></figure>
+
+<hr>
+<h2 id="十一、关键调用链总结"><a href="#十一、关键调用链总结" class="headerlink" title="十一、关键调用链总结"></a>十一、关键调用链总结</h2><table>
+<thead>
+<tr>
+<th>场景</th>
+<th>调用链</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>应用启动</td>
+<td><code>runApp()</code> → <code>ensureInitialized()</code> → <code>initInstances() × 7</code> → <code>scheduleAttachRootWidget()</code> → <code>scheduleWarmUpFrame()</code></td>
+</tr>
+<tr>
+<td>根挂载</td>
+<td><code>attachRootWidget()</code> → <code>RootWidget.attach()</code> → <code>createElement()</code> → <code>buildScope(mount)</code></td>
+</tr>
+<tr>
+<td>每帧循环</td>
+<td><code>Vsync</code> → <code>handleBeginFrame()</code> → <code>handleDrawFrame()</code> → <code>drawFrame()</code> → <code>buildScope</code> + <code>flushLayout</code> + <code>flushPaint</code></td>
+</tr>
+<tr>
+<td>构建调度</td>
+<td><code>setState()</code> → <code>markNeedsBuild()</code> → <code>onBuildScheduled()</code> → <code>ensureVisualUpdate()</code> → 请求 Vsync</td>
+</tr>
+<tr>
+<td>帧三阶段</td>
+<td>1.<code>buildScope</code>构建 → 2.<code>super.drawFrame()</code>布局+绘制+合成 → 3.<code>finalizeTree</code>清理</td>
+</tr>
+</tbody></table>
+</article><div class="post-copyright"><div class="post-copyright__author"><span class="post-copyright-meta"><i class="fas fa-circle-user fa-fw"></i>Author: </span><span class="post-copyright-info"><a href="https://brucexuheng.github.io">BruceXuheng</a></span></div><div class="post-copyright__type"><span class="post-copyright-meta"><i class="fas fa-square-arrow-up-right fa-fw"></i>Link: </span><span class="post-copyright-info"><a href="https://brucexuheng.github.io/2026/08/03/Flutter-%E6%A1%86%E6%9E%B6%E5%88%9D%E5%A7%8B%E5%8C%96%E4%B8%8E%E5%B8%A7%E5%BE%AA%E7%8E%AF%E6%B7%B1%E5%BA%A6%E8%A7%A3%E6%9E%90/">https://brucexuheng.github.io/2026/08/03/Flutter-%E6%A1%86%E6%9E%B6%E5%88%9D%E5%A7%8B%E5%8C%96%E4%B8%8E%E5%B8%A7%E5%BE%AA%E7%8E%AF%E6%B7%B1%E5%BA%A6%E8%A7%A3%E6%9E%90/</a></span></div><div class="post-copyright__notice"><span class="post-copyright-meta"><i class="fas fa-circle-exclamation fa-fw"></i>Copyright Notice: </span><span class="post-copyright-info">All articles on this blog are licensed under <a target="_blank" rel="noopener" href="https://creativecommons.org/licenses/by-nc-sa/4.0/">CC BY-NC-SA 4.0</a> unless otherwise stated.</span></div></div><div class="tag_share"></div><nav class="pagination-post" id="pagination"><a class="pagination-related" href="/2026/08/12/Flutter-%E7%9F%A5%E8%AF%86%E6%B1%87%E6%80%BB/" title="文章标题"><div class="cover" style="background: var(--default-bg-color)"></div><div class="info"><div class="info-1"><div class="info-item-1">Previous</div><div class="info-item-2">文章标题</div></div><div class="info-2"><div class="info-item-1">Flutter 开发工程师面试指南 注意：Flutter&#x2F;Dart 持续演进，线程模型、渲染后端等答案应说明版本和平台语境。  目录 能力模型与面试方法 Dart 语言与运行时 Flutter Framework 与三棵树 布局、绘制、合成与渲染 生命周期、Context、Key 与路由 状态管理与应用架构 网络、缓存、数据层与离线能力 Platform Channel、FFI 与插件 性能优化与 DevTools 稳定性、安全与可观测性 测试、工程化与发布 大型项目架构与团队治理 真实项目与线上故障题 系统设计题 编码与调试题 领导力与行为面试 评分表与录用建议 候选人准备清单与 STAR 模板   1. 能力模型与面试方法1.1 能力矩阵   维度 合格资深 优秀资深    Dart 掌握类型、异步、泛型、空安全 理解 Event Loop、Isolate、编译与内存边界   Framework 理解 Widget&#x2F;Element&#x2F;RenderObject 能沿更新、布局、绘制、合成链路定位问题   架构 能组织清晰的数据流与模块边界 能支撑多人...</div></div></div></a><a class="pagination-related" href="/2026/08/03/Flutter-Widget-Element-RenderObject-%E4%B8%89%E6%A0%91%E5%85%B3%E7%B3%BB%E6%B7%B1%E5%BA%A6%E8%A7%A3%E6%9E%90/" title="Flutter-Widget/Element/RenderObject-三树关系深度解析"><div class="cover" style="background: var(--default-bg-color)"></div><div class="info text-right"><div class="info-1"><div class="info-item-1">Next</div><div class="info-item-2">Flutter-Widget/Element/RenderObject-三树关系深度解析</div></div><div class="info-2"><div class="info-item-1">Flutter Widget&#x2F;Element&#x2F;RenderObject 三树关系深度解析 源码路径：packages/flutter/lib/src/widgets/framework.dart  一、三树模型概述Flutter 的核心架构基于三棵树：  Widget Tree：配置层，不可变、轻量，描述”应该是什么样子” Element Tree：状态层，可变、持久，管理 Widget 和 RenderObject 的对应关系 RenderObject Tree：渲染层，负责布局、绘制和命中测试  123456789101112131415161718flowchart LR    subgraph &quot;Widget Tree 配置&quot;        W1[&quot;StatelessWidget&quot;] --&gt; W2[&quot;Container&quot;]        W1 --&gt; W3[&quot;Text&quot;]    end    subgraph &quot;Element Tree 状态&quot...</div></div></div></a></nav></div><div class="aside-content" id="aside-content"><div class="card-widget card-info text-center"><div class="avatar-img"><img src="/img/head_sculpture.png" onerror="this.onerror=null;this.src='/img/friend_404.gif'" alt="avatar"/></div><div class="author-info-name">BruceXuheng</div><div class="author-info-description">Hi, I'm Xuheng. I'm interested in parkour sports. I'm currently learning rust and moto. BruceXuheng@163.com</div><div class="site-data"><a href="/archives/"><div class="headline">Articles</div><div class="length-num">14</div></a><a href="/tags/"><div class="headline">Tags</div><div class="length-num">5</div></a><a href="/categories/"><div class="headline">Categories</div><div class="length-num">3</div></a></div><a id="card-info-btn" target="_blank" rel="noopener" href="https://github.com/BruceXuheng"><i class="fab fa-github"></i><span>Follow me</span></a><div class="card-info-social-icons"><a class="social-icon" href="https://github.com/BruceXuheng" target="_blank" title="Github"><i class="fab fa-github"></i></a></div></div><div class="card-widget card-announcement"><div class="item-headline"><i class="fas fa-bullhorn fa-shake"></i><span>Announcement</span></div><div class="announcement_content">Hi, I'm Xuheng<br>I'm interested in parkour sports<br>I'm currently learning rust and moto<br>BruceXuheng@163.com</div></div><div class="sticky_layout"><div class="card-widget" id="card-toc"><div class="item-headline"><i class="fas fa-stream"></i><span>Contents</span><span class="toc-percentage"></span></div><div class="toc-content"><ol class="toc"><li class="toc-item toc-level-1"><a class="toc-link" href="#Flutter-%E6%A1%86%E6%9E%B6%E5%88%9D%E5%A7%8B%E5%8C%96%E4%B8%8E%E5%B8%A7%E5%BE%AA%E7%8E%AF%E6%B7%B1%E5%BA%A6%E8%A7%A3%E6%9E%90"><span class="toc-number">1.</span> <span class="toc-text">Flutter 框架初始化与帧循环深度解析</span></a><ol class="toc-child"><li class="toc-item toc-level-2"><a class="toc-link" href="#%E4%B8%80%E3%80%81WidgetsFlutterBinding-%E2%80%94-%E4%B8%83-Mixin-%E7%BB%84%E5%90%88"><span class="toc-number">1.1.</span> <span class="toc-text">一、WidgetsFlutterBinding — 七 Mixin 组合</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#%E4%BA%8C%E3%80%81runApp-%E5%90%AF%E5%8A%A8%E5%85%A8%E9%93%BE%E8%B7%AF"><span class="toc-number">1.2.</span> <span class="toc-text">二、runApp 启动全链路</span></a><ol class="toc-child"><li class="toc-item toc-level-3"><a class="toc-link" href="#%E6%A0%B8%E5%BF%83%E4%BB%A3%E7%A0%81"><span class="toc-number">1.2.1.</span> <span class="toc-text">核心代码</span></a></li></ol></li><li class="toc-item toc-level-2"><a class="toc-link" href="#%E4%B8%89%E3%80%81WidgetsBinding-initInstances-%E5%88%9D%E5%A7%8B%E5%8C%96"><span class="toc-number">1.3.</span> <span class="toc-text">三、WidgetsBinding.initInstances 初始化</span></a><ol class="toc-child"><li class="toc-item toc-level-3"><a class="toc-link" href="#%E6%A0%B8%E5%BF%83%E4%BB%A3%E7%A0%81-1"><span class="toc-number">1.3.1.</span> <span class="toc-text">核心代码</span></a></li></ol></li><li class="toc-item toc-level-2"><a class="toc-link" href="#%E5%9B%9B%E3%80%81RootWidget-attach-%E2%80%94-%E6%A0%B9%E6%8C%82%E8%BD%BD"><span class="toc-number">1.4.</span> <span class="toc-text">四、RootWidget.attach — 根挂载</span></a><ol class="toc-child"><li class="toc-item toc-level-3"><a class="toc-link" href="#%E6%A0%B8%E5%BF%83%E4%BB%A3%E7%A0%81-2"><span class="toc-number">1.4.1.</span> <span class="toc-text">核心代码</span></a></li></ol></li><li class="toc-item toc-level-2"><a class="toc-link" href="#%E4%BA%94%E3%80%81RootElement-%E6%8C%82%E8%BD%BD%E4%B8%8E%E9%87%8D%E5%BB%BA"><span class="toc-number">1.5.</span> <span class="toc-text">五、RootElement 挂载与重建</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#%E5%85%AD%E3%80%81drawFrame-%E2%80%94-%E5%B8%A7%E5%BE%AA%E7%8E%AF%E6%A0%B8%E5%BF%83"><span class="toc-number">1.6.</span> <span class="toc-text">六、drawFrame — 帧循环核心</span></a><ol class="toc-child"><li class="toc-item toc-level-3"><a class="toc-link" href="#%E6%A0%B8%E5%BF%83%E4%BB%A3%E7%A0%81-3"><span class="toc-number">1.6.1.</span> <span class="toc-text">核心代码</span></a></li></ol></li><li class="toc-item toc-level-2"><a class="toc-link" href="#%E4%B8%83%E3%80%81%E5%B8%A7%E8%B0%83%E5%BA%A6%E6%9C%BA%E5%88%B6-%E2%80%94-SchedulerBinding"><span class="toc-number">1.7.</span> <span class="toc-text">七、帧调度机制 — SchedulerBinding</span></a><ol class="toc-child"><li class="toc-item toc-level-3"><a class="toc-link" href="#%E5%B8%A7%E5%9B%9E%E8%B0%83%E7%B1%BB%E5%9E%8B"><span class="toc-number">1.7.1.</span> <span class="toc-text">帧回调类型</span></a></li></ol></li><li class="toc-item toc-level-2"><a class="toc-link" href="#%E5%85%AB%E3%80%81scheduleAttachRootWidget-%E2%80%94-%E5%BC%82%E6%AD%A5%E6%A0%B9%E6%8C%82%E8%BD%BD"><span class="toc-number">1.8.</span> <span class="toc-text">八、scheduleAttachRootWidget — 异步根挂载</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#%E4%B9%9D%E3%80%81WidgetsBindingObserver-%E8%A7%82%E5%AF%9F%E8%80%85%E6%8E%A5%E5%8F%A3"><span class="toc-number">1.9.</span> <span class="toc-text">九、WidgetsBindingObserver 观察者接口</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#%E5%8D%81%E3%80%81%E4%BB%8E-runApp-%E5%88%B0%E9%A6%96%E5%B8%A7%E6%B8%B2%E6%9F%93%E5%AE%8C%E6%95%B4%E6%B5%81%E7%A8%8B"><span class="toc-number">1.10.</span> <span class="toc-text">十、从 runApp 到首帧渲染完整流程</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#%E5%8D%81%E4%B8%80%E3%80%81%E5%85%B3%E9%94%AE%E8%B0%83%E7%94%A8%E9%93%BE%E6%80%BB%E7%BB%93"><span class="toc-number">1.11.</span> <span class="toc-text">十一、关键调用链总结</span></a></li></ol></li></ol></div></div><div class="card-widget card-recent-post"><div class="item-headline"><i class="fas fa-history"></i><span>Recent Posts</span></div><div class="aside-list"><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/2026/08/12/Flutter-%E7%9F%A5%E8%AF%86%E6%B1%87%E6%80%BB/" title="文章标题">文章标题</a><time datetime="2026-08-12T09:54:30.000Z" title="Created 2026-08-12 17:54:30">2026-08-12</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/2026/08/03/Flutter-%E6%A1%86%E6%9E%B6%E5%88%9D%E5%A7%8B%E5%8C%96%E4%B8%8E%E5%B8%A7%E5%BE%AA%E7%8E%AF%E6%B7%B1%E5%BA%A6%E8%A7%A3%E6%9E%90/" title="Flutter-框架初始化与帧循环深度解析">Flutter-框架初始化与帧循环深度解析</a><time datetime="2026-08-03T03:31:50.000Z" title="Created 2026-08-03 11:31:50">2026-08-03</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/2026/08/03/Flutter-Widget-Element-RenderObject-%E4%B8%89%E6%A0%91%E5%85%B3%E7%B3%BB%E6%B7%B1%E5%BA%A6%E8%A7%A3%E6%9E%90/" title="Flutter-Widget/Element/RenderObject-三树关系深度解析">Flutter-Widget/Element/RenderObject-三树关系深度解析</a><time datetime="2026-08-03T03:30:17.000Z" title="Created 2026-08-03 11:30:17">2026-08-03</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/2026/08/03/Flutter-Binding-%E6%9C%BA%E5%88%B6%E6%B7%B1%E5%BA%A6%E8%A7%A3%E6%9E%90/" title="Flutter Binding 机制深度解析">Flutter Binding 机制深度解析</a><time datetime="2026-08-03T03:10:57.000Z" title="Created 2026-08-03 11:10:57">2026-08-03</time></div></div><div class="aside-list-item no-cover"><div class="content"><a class="title" href="/2024/11/15/%E5%86%85%E5%AD%98%E6%B3%84%E6%BC%8F-%E5%86%85%E5%AD%98%E6%BA%A2%E5%87%BA/" title="内存泄漏/内存溢出">内存泄漏/内存溢出</a><time datetime="2024-11-14T18:06:05.000Z" title="Created 2024-11-15 02:06:05">2024-11-15</time></div></div></div></div></div></div></main><footer id="footer"><div class="footer-other"><div class="footer-copyright"><span class="copyright">&copy;&nbsp;2023 - 2026 By BruceXuheng</span><span class="framework-info"><span>Framework </span><a target="_blank" rel="noopener" href="https://hexo.io">Hexo 8.1.2</a><span class="footer-separator">|</span><span>Theme </span><a target="_blank" rel="noopener" href="https://github.com/jerryc127/hexo-theme-butterfly">Butterfly 5.5.1</a></span></div></div></footer></div><div id="rightside"><div id="rightside-config-hide"><button id="readmode" type="button" title="Reading Mode"><i class="fas fa-book-open"></i></button><button id="darkmode" type="button" title="Toggle Between Light and Dark Mode"><i class="fas fa-adjust"></i></button></div><div id="rightside-config-show"><button id="rightside-config" type="button" title="Settings"><i class="fas fa-cog fa-spin"></i></button><button class="close" id="mobile-toc-button" type="button" title="Table of Contents"><i class="fas fa-list-ul"></i></button><button id="go-up" type="button" title="Back to Top"><span class="scroll-percent"></span><i class="fas fa-arrow-up"></i></button></div></div><div><script src="/js/utils.js?v=5.5.1"></script><script src="/js/main.js?v=5.5.1"></script><script src="https://cdn.jsdelivr.net/npm/@fancyapps/ui@6.0.33/dist/fancybox/fancybox.umd.min.js"></script><div class="js-pjax"></div><script async data-pjax src="//busuanzi.ibruce.info/busuanzi/2.3/busuanzi.pure.mini.js"></script><div id="local-search"><div class="search-dialog"><nav class="search-nav"><span class="search-dialog-title">Search</span><i class="fas fa-spinner fa-pulse" id="loading-status" hidden="hidden"></i><button class="search-close-button"><i class="fas fa-times"></i></button></nav><div class="text-center" id="loading-database"><i class="fas fa-spinner fa-pulse"></i><span>  Loading Database</span></div><div class="local-search-input"><input placeholder="Search for Posts" type="text"/></div><hr/><div id="local-search-results"></div><div class="ais-Pagination" id="local-search-pagination" style="display:none;"><ul class="ais-Pagination-list"></ul></div><div id="local-search-stats"></div></div><div id="search-mask"></div><script src="/js/search/local-search.js?v=5.5.1"></script></div></div></body></html>

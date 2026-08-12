@@ -1,0 +1,1795 @@
+<?xml version="1.0" encoding="utf-8"?>
+<search>
+  <entry>
+    <title>Android Rust NDK</title>
+    <url>/2023/10/08/Android-Rust-NDK/</url>
+    <content><![CDATA[一、集成Rust&amp;NDK开发 
+
+创建 moudle [:encrypt] 将完成Rust&amp;NDK
+当前项目 build.gradle.kts  中引入插件
+
+Rust Android Gradle Plugin
+id(“org.mozilla.rust-android-gradle.rust-android”) version “0.9.3” apply false
+// Top-level build file where you can add configuration options common to all sub-projects/modules.plugins &#123;    id(&quot;com.android.application&quot;) version &quot;8.1.0&quot; apply false    id(&quot;org.jetbrains.kotlin.android&quot;) version &quot;1.8.10&quot; apply false    id(&quot;com.android.library&quot;) version &quot;8.1.0&quot; apply false    id(&quot;org.mozilla.rust-android-gradle.rust-android&quot;) version &quot;0.9.3&quot; apply false&#125;
+
+在 [:encrypt] 中构建rust结构
+
+在当前moudle下执行命令 cargo new rust目录结构如下
+encrypt -libs -rust 	--src 	--.gitignore 	--Cargo.lock 	--Cargo.toml -src -.gitignore -build.gradle.kts -consumer-rules.pro -proguard-rules.pro
+
+配置Cargo.toml
+[package]name = &quot;brencrypt&quot;version = &quot;0.1.0&quot;edition = &quot;2021&quot;# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html[dependencies]jni = &quot;0.18.0&quot;	   [lib]crate_type = [&quot;staticlib&quot;, &quot;cdylib&quot;]
+
+在 [:encrypt] 中集成 mozilla.rust-android-gradle.
+
+具体说明查看 Rust Android Gradle Plugin
+id(“org.mozilla.rust-android-gradle.rust-android”) version “0.9.3”
+plugins &#123;    id(&quot;com.android.library&quot;)    id(&quot;org.jetbrains.kotlin.android&quot;)    id(&quot;org.mozilla.rust-android-gradle.rust-android&quot;) version &quot;0.9.3&quot;&#125;
+
+CargoExtension配置
+extensions.configure(com.nishtahir.CargoExtension::class) &#123;    module = &quot;./rust&quot;  // Or whatever directory contains your Cargo.toml    libname = &quot;brencrypt&quot; // Or whatever matches Cargo.toml&#x27;s [package] name.    targets = listOf(&quot;arm&quot;,&quot;x86&quot;,&quot;arm64&quot;) // See bellow for a longer list of options    profile = &quot;release&quot; // The Cargo release profile to build.    prebuiltToolchains = true    // targetIncludes = [&#x27;libnotlibname.so&#x27;]&#125;
+
+在项目下执行 gradlew.bat cargobuild
+so文件转移
+
+
+目前 Mozilla 插件还不支持AGP8.0 有不少问题， 没办法自动迁移so
+
+​		手动转移到  [:encrypt] 中jniLibs中
+mainjava -jniLibs 	--arm64-v8a  		---libbrencrypt.so 	--armeabi-v7a  		---libbrencrypt.so]]></content>
+      <categories>
+        <category>Android</category>
+      </categories>
+      <tags>
+        <tag>Android</tag>
+        <tag>Rust</tag>
+      </tags>
+  </entry>
+  <entry>
+    <title>Flutter Binding 机制深度解析</title>
+    <url>/2026/08/03/Flutter-Binding-%E6%9C%BA%E5%88%B6%E6%B7%B1%E5%BA%A6%E8%A7%A3%E6%9E%90/</url>
+    <content><![CDATA[
+源码路径：packages/flutter/lib/src/foundation/binding.dart
+
+一、BindingBase 核心定位BindingBase 是 Flutter 框架所有 Binding 的基类，采用 mixin 链式初始化 + 单例 模式。Flutter 框架的7个 Binding（GestureBinding、SchedulerBinding、ServicesBinding、PaintingBinding、SemanticsBinding、RendererBinding、WidgetsBinding）都通过 on BindingBase 约束，在构造时依次完成初始化。
+
+二、BindingBase 初始化流程flowchart TD    A[&quot;BindingBase 构造函数&quot;] --&gt; B[&quot;initInstances()&quot;]    B --&gt; B1[&quot;记录 _debugInitializedType = runtimeType&quot;]    B1 --&gt; B2[&quot;记录 _debugBindingZone = Zone.current&quot;]    B2 --&gt; B3[&quot;子类 override: _instance = this&quot;]    A --&gt; C[&quot;initServiceExtensions()&quot;]    C --&gt; C1[&quot;registerSignalServiceExtension: reassemble&quot;]    C1 --&gt; C2[&quot;registerSignalServiceExtension: exit&quot;]    C2 --&gt; C3[&quot;registerStringServiceExtension: connectedVmServiceUri&quot;]    C3 --&gt; C4[&quot;registerStringServiceExtension: activeDevToolsServerAddress&quot;]    C4 --&gt; C5[&quot;registerServiceExtension: platformOverride Debug&quot;]    C5 --&gt; C6[&quot;registerServiceExtension: brightnessOverride Debug&quot;]
+
+核心代码// L155: BindingBase 构造函数abstract class BindingBase &#123;  BindingBase() &#123;    initInstances();          // 链式初始化单例    initServiceExtensions();  // 注册 VM 服务扩展  &#125;&#125;// L290: initInstances — @mustCallSuper 确保子类调用父类@mustCallSupervoid initInstances() &#123;  _debugInitializedType = runtimeType;  _debugBindingZone = Zone.current;&#125;// L311: checkInstance — 静态校验单例是否已初始化static T checkInstance&lt;T&gt;(T? instance) &#123;  // 未初始化 → 抛 FlutterError  // 已初始化 → 返回 instance&#125;
+
+单例模式每个 Binding 子类在 initInstances() 中设置 _instance = this，通过 static T get instance =&gt; BindingBase.checkInstance(_instance) 访问。这确保了全局唯一的 Binding 实例。
+
+三、Mixin 链式初始化顺序flowchart BT    subgraph &quot;WidgetsFlutterBinding 初始化链（构造时从右到左）&quot;    BB[&quot;BindingBase 构造函数入口&quot;] --&gt; GB[&quot;GestureBinding&lt;br/&gt;initInstances + initServiceExtensions&quot;]    GB --&gt; SB[&quot;SchedulerBinding&lt;br/&gt;initInstances + initServiceExtensions&quot;]    SB --&gt; SVB[&quot;ServicesBinding&lt;br/&gt;initInstances + initServiceExtensions&quot;]    SVB --&gt; PB[&quot;PaintingBinding&lt;br/&gt;initInstances + initServiceExtensions&quot;]    PB --&gt; SemB[&quot;SemanticsBinding&lt;br/&gt;initInstances + initServiceExtensions&quot;]    SemB --&gt; RB[&quot;RendererBinding&lt;br/&gt;initInstances + initServiceExtensions&quot;]    RB --&gt; WB[&quot;WidgetsBinding&lt;br/&gt;initInstances + initServiceExtensions&quot;]    end
+
+
+关键：Dart mixin 的初始化顺序遵循线性化规则，BindingBase 的构造函数最先执行，然后按 mixin 声明顺序从左到右调用各 initInstances() 和 initServiceExtensions()。
+
+
+四、lockEvents 事件锁机制flowchart TD    A[&quot;lockEvents(callback)&quot;] --&gt; B[&quot;_lockCount++&quot;]    B --&gt; C[&quot;执行 callback()&quot;]    C --&gt; D[&quot;_lockCount--&quot;]    D --&gt; E&#123;&quot;locked? _lockCount &gt; 0&quot;&#125;    E --&gt;|是| F[&quot;等待其他锁释放&quot;]    E --&gt;|否| G[&quot;unlocked() 刷新事件队列&quot;]
+
+核心代码// L660: 事件锁Future&lt;void&gt; lockEvents(Future&lt;void&gt; Function() callback) &#123;  _lockCount += 1;  final future = callback();  future.whenComplete(() &#123;    _lockCount -= 1;    if (!locked) unlocked();  // 解锁时刷新队列  &#125;);  return future;&#125;
+
+用途：在 reassembleApplication（热重载）期间锁定事件分发，防止重载过程中的中间状态事件被处理。
+
+五、reassembleApplication 热重载flowchart TD    A[&quot;reassembleApplication()&quot;] --&gt; B[&quot;lockEvents(performReassemble)&quot;]    B --&gt; C[&quot;_lockCount++&quot;]    C --&gt; D[&quot;performReassemble()&quot;]    D --&gt; D1[&quot;FlutterError.resetErrorCount()&quot;]    D1 --&gt; D2[&quot;子类 override: 重注册闭包/刷新缓存&quot;]    D2 --&gt; E[&quot;_lockCount--&quot;]    E --&gt; F[&quot;unlocked() 刷新队列&quot;]
+
+
+六、registerServiceExtension 四种注册方法flowchart TD    A1[&quot;registerSignalServiceExtension&lt;br/&gt;无参数无返回值&quot;] --&gt; R[&quot;registerServiceExtension&lt;br/&gt;name → ext.flutter.$name&quot;]    A2[&quot;registerBoolServiceExtension&lt;br/&gt;enabled 参数&quot;] --&gt; R    A3[&quot;registerNumericServiceExtension&lt;br/&gt;double 参数&quot;] --&gt; R    A4[&quot;registerStringServiceExtension&lt;br/&gt;value 参数&quot;] --&gt; R    R --&gt; DEV[&quot;developer.registerExtension&lt;br/&gt;注册到 VM 服务协议&quot;]    DEV --&gt; FD[&quot;Future.delayed(Duration.zero)&lt;br/&gt;确保外层事件循环执行&quot;]    FD --&gt; RES[&quot;ServiceExtensionResponse.result&lt;br/&gt;JSON 编码返回&quot;]
+
+核心代码// L930: 最终注册方法void registerServiceExtension(&#123;  required String name,  required ServiceExtensionCallback callback,&#125;) &#123;  final methodName = &#x27;ext.flutter.$name&#x27;;  developer.registerExtension(methodName, (method, parameters) async &#123;    await Future&lt;void&gt;.delayed(Duration.zero);  // 确保外层事件循环执行    final result = await callback(parameters);    return developer.ServiceExtensionResponse.result(json.encode(result));  &#125;);&#125;
+
+Future.delayed(Duration.zero) 的意义：将回调调度到下一个微任务，确保当前事件循环中的其他事件先处理完毕，避免在服务扩展回调中阻塞当前帧。
+
+七、类关系图classDiagram    class BindingBase &#123;        &lt;&lt;abstract&gt;&gt;        +initInstances() mustCallSuper        +initServiceExtensions() mustCallSuper        +locked : bool        +lockEvents(callback)        +reassembleApplication()        +performReassemble() mustCallSuper        +registerServiceExtension()        +checkInstance(instance) static    &#125;    class GestureBinding    class SchedulerBinding    class ServicesBinding    class PaintingBinding    class SemanticsBinding    class RendererBinding    class WidgetsBinding    BindingBase &lt;|-- GestureBinding : on BindingBase    BindingBase &lt;|-- SchedulerBinding : on BindingBase    BindingBase &lt;|-- ServicesBinding : on BindingBase    BindingBase &lt;|-- PaintingBinding : on BindingBase    BindingBase &lt;|-- SemanticsBinding : on BindingBase    BindingBase &lt;|-- RendererBinding : on BindingBase    BindingBase &lt;|-- WidgetsBinding : on BindingBase    class WidgetsFlutterBinding &#123;        +ensureInitialized() static    &#125;    WidgetsFlutterBinding ..|&gt; BindingBase : with all 7 mixins
+
+
+八、关键调用链总结
+
+
+场景
+调用链
+
+
+
+应用启动
+WidgetsFlutterBinding() → BindingBase() → initInstances() × 7 → initServiceExtensions() × 7
+
+
+热重载
+reassembleApplication() → lockEvents(performReassemble) → 各子类 performReassemble()
+
+
+服务扩展调用
+VM → ext.flutter.$name → Future.delayed(Duration.zero) → callback(parameters) → JSON 响应
+
+
+事件锁
+lockEvents(cb) → _lockCount++ → cb() → _lockCount-- → unlocked()
+
+
+]]></content>
+      <categories>
+        <category>Flutter</category>
+      </categories>
+      <tags>
+        <tag>Flutter</tag>
+      </tags>
+  </entry>
+  <entry>
+    <title>Android系统进程-思维构建</title>
+    <url>/2024/08/26/Android%E7%B3%BB%E7%BB%9F%E8%BF%9B%E7%A8%8B-%E6%80%9D%E7%BB%B4%E6%9E%84%E5%BB%BA/</url>
+    <content><![CDATA[init进程概述init进程并非鼻祖进程, 真正的鼻祖是进程id为0的 swapper进程(idele进程).
+init的进程(pid&#x3D;1), 是Android用户空间所有进程的鼻祖, 还有一个兄弟进程kthread进程(pid&#x3D;2), 是Android内核空间所有进程的鼻祖.
+init会 fork&#x2F;clone 多个子进程, vold\adbd\lmkd\logd\surfaceflinger\servicemanager\zygote(systemserver(AMS&#x2F;WMS&#x2F;PMS)&#x2F;launcher&#x2F;phone&#x2F;camera)
+surfaceflinger进程作用是：把多个来源的图像数据，如需合成则进行合成 否则直接提交给display驱动进行显示
+
+lmkd进程 Low Memory Killer Daemon低内存杀手守护进程, 查杀进程的。会监控内存的使用情况，当达到一定阀值的时候，会去杀掉一些处于后台的、优先级低的、占用内存高的进程, 是一个守护进程，会在后台默默的为内存的健康保驾护航.
+
+logdlog功能
+
+servicemanager进程为binder通信服务的，负责整个Android系统的binder通信 ，所以 需要提前启动
+
+zygote进程init进程直接创建的子进程中唯一可以运行java代码的进程
+
+进程启动选用脚本语言定义创建子进程以及顺序,后缀.rc, 可定义子进程基础信息、触发条件、前置命令、创建命令，需要用init脚本语言来配置创建子进程的步骤如下1. 首先 子进程在以.rc的脚本文件中，使用service关键字来配置子进程相关的信息2. 其次 在init.rc文件中（init.rc文件到底是在哪个目录这个是不确定的）使用import关键字引入脚本文件，使用on关键字来配置子进程的触发条件，3. 触发条件配置完毕后，如若子进程在创建之前需要配置一些前置操作或命令，则基于触发条件下配置这些信息4. 最后 使用start关键字来配置创建子进程的命令。子进程的基础信息会被解析到Service实例中，所有的Service实例会存放到ServiceList对象中。触发条件和它包含的命令会被解析到Action实例中，所有的Action实例会存放到ActionManager对象中.
+
+小计子进程的善后都需要创建进程的处理,1. 首先我先使用sigaction函数来注册SIGCHLD信号，这样就可以监听到子进程的状态了2. 其次使用signalfd函数为SIGCHLD信号生成一个fd（文件描述符）3. 再次使用epoll来见监听上一步生成的fd是否有可读数据4. 如监听到fd上有可读数据，则证明子进程的状态发生了变化，还需要使用waitpid函数来获取是哪个子进程死掉了
+
+servicemanagerzygotesystemserver进程ActivityManagerServiceWindowManagerServiceInputManagerServicePackageManagerServicesurfaceflinger进程四大组件binderhandler窗口ui绘制事件分发类加载机制]]></content>
+      <categories>
+        <category>Android</category>
+      </categories>
+      <tags>
+        <tag>Android</tag>
+      </tags>
+  </entry>
+  <entry>
+    <title>Flutter-Widget/Element/RenderObject-三树关系深度解析</title>
+    <url>/2026/08/03/Flutter-Widget-Element-RenderObject-%E4%B8%89%E6%A0%91%E5%85%B3%E7%B3%BB%E6%B7%B1%E5%BA%A6%E8%A7%A3%E6%9E%90/</url>
+    <content><![CDATA[Flutter Widget&#x2F;Element&#x2F;RenderObject 三树关系深度解析
+源码路径：packages/flutter/lib/src/widgets/framework.dart
+
+一、三树模型概述Flutter 的核心架构基于三棵树：
+
+Widget Tree：配置层，不可变、轻量，描述”应该是什么样子”
+Element Tree：状态层，可变、持久，管理 Widget 和 RenderObject 的对应关系
+RenderObject Tree：渲染层，负责布局、绘制和命中测试
+
+flowchart LR    subgraph &quot;Widget Tree 配置&quot;        W1[&quot;StatelessWidget&quot;] --&gt; W2[&quot;Container&quot;]        W1 --&gt; W3[&quot;Text&quot;]    end    subgraph &quot;Element Tree 状态&quot;        E1[&quot;StatelessElement&quot;] --&gt; E2[&quot;SingleChildRenderObjectElement&quot;]        E1 --&gt; E3[&quot;LeafRenderObjectElement&quot;]    end    subgraph &quot;RenderObject Tree 渲染&quot;        R1[&quot;RenderPadding&quot;] --&gt; R2[&quot;RenderParagraph&quot;]    end    W1 -.-&gt;|createElement| E1    W2 -.-&gt;|createElement| E2    W3 -.-&gt;|createElement| E3    E2 -.-&gt;|renderObject| R1    E3 -.-&gt;|renderObject| R2
+
+
+二、Widget 核心类层次classDiagram    class Widget &#123;        &lt;&lt;abstract&gt;&gt;        +key : Key?        +createElement() Element        +canUpdate(old, new) bool static    &#125;    class StatelessWidget &#123;        +build(context) Widget        +createElement() StatelessElement    &#125;    class StatefulWidget &#123;        +createState() State        +createElement() StatefulElement    &#125;    class ProxyWidget &#123;        +child : Widget    &#125;    class RenderObjectWidget &#123;        +createRenderObject() RenderObject        +updateRenderObject()        +didUnmountRenderObject()        +createElement() RenderObjectElement    &#125;    class LeafRenderObjectWidget &#123;        +createElement() LeafRenderObjectElement    &#125;    class SingleChildRenderObjectWidget &#123;        +child : Widget?        +createElement() SingleChildRenderObjectElement    &#125;    class MultiChildRenderObjectWidget &#123;        +children : List~Widget~        +createElement() MultiChildRenderObjectElement    &#125;    Widget &lt;|-- StatelessWidget    Widget &lt;|-- StatefulWidget    Widget &lt;|-- ProxyWidget    Widget &lt;|-- RenderObjectWidget    RenderObjectWidget &lt;|-- LeafRenderObjectWidget    RenderObjectWidget &lt;|-- SingleChildRenderObjectWidget    RenderObjectWidget &lt;|-- MultiChildRenderObjectWidget    ProxyWidget &lt;|-- InheritedWidget    ProxyWidget &lt;|-- ParentDataWidget
+
+Widget.canUpdate — Diff 算法核心// L432: 决定是否可复用旧 Elementstatic bool canUpdate(Widget oldWidget, Widget newWidget) &#123;  return oldWidget.runtimeType == newWidget.runtimeType      &amp;&amp; oldWidget.key == newWidget.key;&#125;
+
+canUpdate 返回 true → 复用旧 Element，调用 element.update(newWidget)canUpdate 返回 false → 旧 Element 卸载，创建新 Element
+
+三、Element 核心类层次与生命周期classDiagram    class Element &#123;        &lt;&lt;abstract&gt;&gt;        +widget : Widget        +depth : int        +owner : BuildOwner        +slot : dynamic        +mount(parent, slot)        +update(newWidget)        +deactivate()        +unmount()        +findAncestorRenderObjectElement()    &#125;    class ComponentElement &#123;        +_child : Element?        +performRebuild()        +mount() rebuild    &#125;    class StatelessElement &#123;        +build() widget.build(this)    &#125;    class StatefulElement &#123;        +_state : State        +build() state.build(this)        +mount() state.initState()        +update() state.didUpdateWidget()        +deactivate() state.deactivate()        +unmount() state.dispose()    &#125;    class RenderObjectElement &#123;        +renderObject : RenderObject        +mount() createRenderObject + attachRenderObject        +update() updateRenderObject        +deactivate() detachRenderObject        +unmount() didUnmountRenderObject    &#125;    class LeafRenderObjectElement    class SingleChildRenderObjectElement    class MultiChildRenderObjectElement    Element &lt;|-- ComponentElement    Element &lt;|-- RenderObjectElement    ComponentElement &lt;|-- StatelessElement    ComponentElement &lt;|-- StatefulElement    RenderObjectElement &lt;|-- LeafRenderObjectElement    RenderObjectElement &lt;|-- SingleChildRenderObjectElement    RenderObjectElement &lt;|-- MultiChildRenderObjectElement
+
+Element 生命周期状态机stateDiagram-v2    [*] --&gt; initial : createElement()    initial --&gt; active : mount(parent, slot)    active --&gt; active : update(newWidget)    active --&gt; inactive : deactivate()    inactive --&gt; active : activate() GlobalKey复用    inactive --&gt; defunct : unmount()    defunct --&gt; [*]
+
+
+四、updateChild — 三树更新的核心调度updateChild 是 Element 更新子节点的核心方法，根据 Widget.canUpdate 的结果决定子 Element 的命运：
+flowchart TD    A[&quot;updateChild(child, newWidget, newSlot)&quot;] --&gt; B&#123;&quot;newWidget == null?&quot;&#125;    B --&gt;|是| C&#123;&quot;child != null?&quot;&#125;    C --&gt;|是| D[&quot;deactivateChild(child)&lt;br/&gt;子树卸载&quot;]    C --&gt;|否| E[&quot;return null 无操作&quot;]    B --&gt;|否| F&#123;&quot;child != null?&quot;&#125;    F --&gt;|是| G&#123;&quot;Widget.canUpdate?&lt;br/&gt;runtimeType+key 相同?&quot;&#125;    G --&gt;|是| H[&quot;child.update(newWidget)&lt;br/&gt;复用 Element&quot;]    G --&gt;|否| I[&quot;newChild = inflateWidget&lt;br/&gt;deactivateChild(old)&quot;]    F --&gt;|否| J[&quot;newChild = inflateWidget&lt;br/&gt;创建新 Element&quot;]    H --&gt; K[&quot;return child&quot;]    I --&gt; K    J --&gt; K
+
+核心代码// L3982: updateChild — 子 Element 更新调度Element? updateChild(Element? child, Widget? newWidget, dynamic newSlot) &#123;  if (newWidget == null) &#123;    if (child != null) deactivateChild(child);    return null;  &#125;  if (child != null) &#123;    if (Widget.canUpdate(child.widget, newWidget)) &#123;      child.update(newWidget);  // 复用      return child;    &#125;    deactivateChild(child);     // 卸载旧  &#125;  return inflateWidget(newWidget, newSlot);  // 创建新&#125;
+
+
+五、Element.mount 挂载流程flowchart TD    A[&quot;mount(parent, newSlot)&quot;] --&gt; A1[&quot;_parent = parent&quot;]    A1 --&gt; A2[&quot;_slot = newSlot&quot;]    A2 --&gt; A3[&quot;depth = parent.depth + 1&quot;]    A3 --&gt; A4[&quot;_owner = parent.owner&quot;]    A4 --&gt; A5[&quot;parent.updateChild(this, widget, slot)&quot;]
+
+ComponentElement.mountflowchart TD    B1[&quot;super.mount()&quot;] --&gt; B2[&quot;rebuild() → performRebuild()&quot;]    B2 --&gt; B3[&quot;StatelessElement: widget.build(this)&quot;]    B2 --&gt; B4[&quot;StatefulElement: state.initState() → state.build()&quot;]
+
+RenderObjectElement.mountflowchart TD    C1[&quot;super.mount()&quot;] --&gt; C2[&quot;_renderObject = widget.createRenderObject()&quot;]    C2 --&gt; C3[&quot;attachRenderObject(newSlot)&quot;]    C3 --&gt; C4[&quot;renderObject.attach(owner)&quot;]
+
+
+六、RenderObjectElement 与 RenderObject 的桥接flowchart TD    A[&quot;RenderObjectElement.mount()&quot;] --&gt; B[&quot;widget.createRenderObject(this)&quot;]    B --&gt; C[&quot;renderObject = 新 RenderObject&quot;]    C --&gt; D[&quot;attachRenderObject(newSlot)&quot;]    D --&gt; E[&quot;renderObject.attach(owner.pipelineOwner)&quot;]    F[&quot;RenderObjectElement.update(newWidget)&quot;] --&gt; G[&quot;super.update()&quot;]    G --&gt; H[&quot;widget.updateRenderObject(this, renderObject)&quot;]    I[&quot;RenderObjectElement.unmount()&quot;] --&gt; J[&quot;widget.didUnmountRenderObject(renderObject)&quot;]    J --&gt; K[&quot;renderObject.detach()&quot;]    K --&gt; L[&quot;owner.releaseRenderObject(renderObject)&quot;]
+
+
+七、BuildOwner 构建管理flowchart TD    A[&quot;BuildOwner&quot;] --&gt; B[&quot;_dirtyElements : List~Element~&quot;]    A --&gt; C[&quot;_globalKeyRegistry : Map~Key, Element~&quot;]    D[&quot;onBuildScheduled()&quot;] --&gt; E[&quot;ensureVisualUpdate()&quot;]    F[&quot;buildScope(context, callback)&quot;] --&gt; G[&quot;排序 _dirtyElements depth升序&quot;]    G --&gt; H[&quot;遍历 dirty Elements&quot;]    H --&gt; I[&quot;element.rebuild() → performRebuild()&quot;]    I --&gt; J[&quot;finalizeTree() → unmount 不可恢复的 Elements&quot;]
+
+
+八、完整帧构建流程flowchart TD    A[&quot;BuildOwner.buildScope()&quot;] --&gt; B[&quot;按 depth 升序排序 dirty Elements&quot;]    B --&gt; C[&quot;遍历每个 dirty Element&quot;]    C --&gt; D[&quot;element.rebuild()&quot;]    D --&gt; E[&quot;ComponentElement.performRebuild()&quot;]    E --&gt; F[&quot;built = build()&quot;]    F --&gt; G[&quot;updateChild(_child, built, slot)&quot;]    G --&gt; H&#123;&quot;Widget.canUpdate?&quot;&#125;    H --&gt;|复用| I[&quot;child.update(newWidget)&quot;]    H --&gt;|新建| J[&quot;inflateWidget → createElement → mount&quot;]    H --&gt;|卸载| K[&quot;deactivateChild → deactivate → unmount&quot;]    J --&gt; L[&quot;RenderObjectElement.mount&quot;]    L --&gt; M[&quot;createRenderObject → attachRenderObject&quot;]    I --&gt; N[&quot;RenderObjectElement.update&quot;]    N --&gt; O[&quot;updateRenderObject → markNeedsLayout/markNeedsPaint&quot;]
+
+
+九、StatefulElement 与 State 的交互flowchart TD    A[&quot;StatefulElement.mount()&quot;] --&gt; A1[&quot;super.mount()&quot;]    A1 --&gt; A2[&quot;_state = widget.createState()&quot;]    A2 --&gt; A3[&quot;_state._element = this&quot;]    A3 --&gt; A4[&quot;_state.initState()&quot;]    A4 --&gt; A5[&quot;rebuild() → _state.build()&quot;]    B[&quot;StatefulElement.update(newWidget)&quot;] --&gt; B1[&quot;_state.didUpdateWidget(oldWidget)&quot;]    B1 --&gt; B2[&quot;rebuild() → _state.build()&quot;]    C[&quot;setState(callback)&quot;] --&gt; C1[&quot;_element.markNeedsBuild()&quot;]    C1 --&gt; C2[&quot;BuildOwner.scheduleBuildFor(_element)&quot;]    C2 --&gt; C3[&quot;下一帧 buildScope → rebuild&quot;]    D[&quot;StatefulElement.deactivate()&quot;] --&gt; D1[&quot;_state.deactivate()&quot;]    E[&quot;StatefulElement.unmount()&quot;] --&gt; E1[&quot;_state.dispose()&quot;]
+
+
+十、关键调用链总结
+
+
+场景
+调用链
+
+
+
+首次构建
+mount() → rebuild() → build() → updateChild(null, built, slot) → inflateWidget() → createElement() → child.mount()
+
+
+Widget 更新
+markNeedsBuild() → buildScope() → rebuild() → build() → updateChild(old, built, slot) → canUpdate? update&#x2F;inflate
+
+
+Widget 替换
+canUpdate = false → deactivateChild() → inflateWidget() → 旧 Element deactivate → 新 Element mount
+
+
+State 更新
+setState() → markNeedsBuild() → 下一帧 rebuild() → build()
+
+
+Element 卸载
+deactivate() → 移入 _inactiveElements → unmount() → RenderObjectElement.unmount() → detachRenderObject()
+
+
+GlobalKey 复用
+inflateWidget() → globalKeyRegistry 查找 → 旧 Element deactivate → activate() 复用
+
+
+]]></content>
+      <categories>
+        <category>Flutter</category>
+      </categories>
+      <tags>
+        <tag>Flutter</tag>
+      </tags>
+  </entry>
+  <entry>
+    <title>Android Scrcpy Frp 远程操控/调试Android手机</title>
+    <url>/2023/06/25/Android-Scrcpy-Frp-%E8%BF%9C%E7%A8%8B%E6%93%8D%E6%8E%A7-%E8%B0%83%E8%AF%95Android%E6%89%8B%E6%9C%BA/</url>
+    <content><![CDATA[1. 安装msys2https://www.msys2.org/2. 安装环境参考文档https://blog.csdn.net/u012787710/article/details/130430216pacman -S mingw-w64-x86_64-SDL2pacman -S mingw-w64-x86_64-ffmpegpacman -S mingw-w64-x86_64-libusbpacman -S mingw-w64-x86_64-makepacman -S mingw-w64-x86_64-pkg-configpacman -S mingw-w64-x86_64-meson3.pwdgit clone https://github.com/Genymobile/scrcpy.git4.# 进入代码仓cd./ scrcpy/# 编译scrcpy-server 如果慢 跳过 下载编译好的 https://github.com/Genymobile/scrcpy/releases/tag/v2.0./server/scripts/build-wrapper.sh &quot;server&quot; &quot;server/scrcpy-server&quot; &quot;release&quot;# 我放入了 scrcpy-server	scrcpy\server\scrcpy-server# 编译Scrcpy.exemeson x --buildtype release --strip -Db_lto=true -Dprebuilt_server=./server/scrcpy-server-v2.0ninja.exe -Cx./run x---&gt;ERROR: Command not found: [adb], [start-server]---&gt;解: 放入代码仓根目录 adb.exe AdbWinApi.dll AdbWinUsbApi.dll]]></content>
+      <categories>
+        <category>Android</category>
+      </categories>
+      <tags>
+        <tag>Android</tag>
+        <tag>Debug</tag>
+      </tags>
+  </entry>
+  <entry>
+    <title>Flutter-框架初始化与帧循环深度解析</title>
+    <url>/2026/08/03/Flutter-%E6%A1%86%E6%9E%B6%E5%88%9D%E5%A7%8B%E5%8C%96%E4%B8%8E%E5%B8%A7%E5%BE%AA%E7%8E%AF%E6%B7%B1%E5%BA%A6%E8%A7%A3%E6%9E%90/</url>
+    <content><![CDATA[Flutter 框架初始化与帧循环深度解析
+源码路径：packages/flutter/lib/src/widgets/binding.dart
+
+一、WidgetsFlutterBinding — 七 Mixin 组合classDiagram    class WidgetsFlutterBinding &#123;        +ensureInitialized() WidgetsBinding static    &#125;    class BindingBase    class GestureBinding    class SchedulerBinding    class ServicesBinding    class PaintingBinding    class SemanticsBinding    class RendererBinding    class WidgetsBinding    WidgetsFlutterBinding --|&gt; BindingBase    WidgetsFlutterBinding ..|&gt; GestureBinding : with    WidgetsFlutterBinding ..|&gt; SchedulerBinding : with    WidgetsFlutterBinding ..|&gt; ServicesBinding : with    WidgetsFlutterBinding ..|&gt; PaintingBinding : with    WidgetsFlutterBinding ..|&gt; SemanticsBinding : with    WidgetsFlutterBinding ..|&gt; RendererBinding : with    WidgetsFlutterBinding ..|&gt; WidgetsBinding : with
+
+// L1819: 七 mixin 组合定义class WidgetsFlutterBinding extends BindingBase    with GestureBinding,         SchedulerBinding,         ServicesBinding,         PaintingBinding,         SemanticsBinding,         RendererBinding,         WidgetsBinding &#123;  static WidgetsBinding ensureInitialized() &#123;    if (_instance == null) WidgetsFlutterBinding();    return WidgetsBinding.instance;  &#125;&#125;
+
+
+二、runApp 启动全链路flowchart TD    A[&quot;runApp(app)&quot;] --&gt; B[&quot;WidgetsFlutterBinding.ensureInitialized()&quot;]    B --&gt; C[&quot;WidgetsFlutterBinding() 构造&quot;]    C --&gt; D[&quot;BindingBase() → initInstances × 7&quot;]    D --&gt; E[&quot;initServiceExtensions × 7&quot;]    E --&gt; F[&quot;_runWidget(binding.wrapWithDefaultView(app))&quot;]    F --&gt; G[&quot;scheduleAttachRootWidget(app)&quot;]    G --&gt; H[&quot;scheduleWarmUpFrame()&quot;]    H --&gt; I[&quot;首帧调度: handleBeginFrame → handleDrawFrame&quot;]
+
+核心代码// L1574: runApp 入口void runApp(Widget app) &#123;  final WidgetsBinding binding = WidgetsFlutterBinding.ensureInitialized();  _runWidget(binding.wrapWithDefaultView(app), binding, &#x27;runApp&#x27;);&#125;// L1639: _runWidgetvoid _runWidget(Widget app, WidgetsBinding binding, String debugMethodName) &#123;  binding.scheduleAttachRootWidget(app);  binding.scheduleWarmUpFrame();&#125;// L1840: ensureInitializedstatic WidgetsBinding ensureInitialized() &#123;  if (_instance == null) WidgetsFlutterBinding();  return WidgetsBinding.instance;&#125;
+
+
+三、WidgetsBinding.initInstances 初始化flowchart TD    A[&quot;WidgetsBinding.initInstances()&quot;] --&gt; B[&quot;super.initInstances()&quot;]    B --&gt; C[&quot;_instance = this&quot;]    C --&gt; D[&quot;buildOwner = BuildOwner()&quot;]    D --&gt; E[&quot;buildOwner.onBuildScheduled = _handleBuildScheduled&quot;]    E --&gt; F[&quot;注册栈帧过滤器&lt;br/&gt;ComponentElement/StatefulElement/...&quot;]    F --&gt; G[&quot;addPersistentFrameCallback(_drawFrame)&quot;]    G --&gt; H[&quot;initServiceExtensions()&quot;]
+
+核心代码// L537+: WidgetsBinding.initInstances@overridevoid initInstances() &#123;  super.initInstances();  _instance = this;  buildOwner = BuildOwner();  buildOwner!.onBuildScheduled = _handleBuildScheduled;  // 注册栈帧过滤器...  addPersistentFrameCallback(_drawFrame);  // 每帧回调&#125;// L1121: 构建调度void _handleBuildScheduled() &#123;  ensureVisualUpdate();  // 请求下一帧&#125;
+
+
+四、RootWidget.attach — 根挂载flowchart TD    A[&quot;RootWidget.attach(owner, element)&quot;] --&gt; B&#123;&quot;element == null?&lt;br/&gt;首次挂载?&quot;&#125;    B --&gt;|是| C[&quot;element = createElement() → RootElement&quot;]    C --&gt; D[&quot;owner.lockState(assignOwner)&quot;]    D --&gt; E[&quot;owner.buildScope(mount)&quot;]    B --&gt;|否| F[&quot;element.markNeedsBuild()&quot;]    F --&gt; G[&quot;下一帧 rebuild&quot;]
+
+核心代码// L1696: RootWidget.attachvoid attach(BuildOwner owner, Element? element) &#123;  if (element == null) &#123;    owner.lockState(() &#123;      final Element newElement = createElement();      newElement.assignOwner(owner);      owner.buildScope(newElement, () &#123;        newElement.mount(null, null);      &#125;);    &#125;);  &#125; else &#123;    element.markNeedsBuild();  &#125;&#125;
+
+
+五、RootElement 挂载与重建flowchart TD    A[&quot;RootElement.mount()&quot;] --&gt; B[&quot;super.mount()&quot;]    B --&gt; C[&quot;_rebuild()&quot;]    C --&gt; D[&quot;updateChild(null, widget.child, null)&quot;]    D --&gt; E[&quot;inflateWidget → createElement → mount&quot;]    F[&quot;RootElement.performRebuild()&quot;] --&gt; G&#123;&quot;_newWidget != null?&quot;&#125;    G --&gt;|有延迟更新| H[&quot;_child = updateChild(_child, _newWidget, ...)&quot;]    G --&gt;|无| I[&quot;_rebuild()&quot;]    H --&gt; J[&quot;_newWidget = null&quot;]
+
+
+六、drawFrame — 帧循环核心drawFrame 是每帧执行的核心回调，通过 addPersistentFrameCallback 注册到 SchedulerBinding。
+flowchart TD    A[&quot;drawFrame()&quot;] --&gt; B[&quot;buildOwner!.buildScope(rootElement!)&quot;]    B --&gt; C[&quot;构建 dirty Elements&quot;]    C --&gt; D[&quot;super.drawFrame()&quot;]    D --&gt; D1[&quot;RendererBinding.drawFrame()&quot;]    D1 --&gt; D2[&quot;pipelineOwner.flushLayout()&quot;]    D2 --&gt; D3[&quot;pipelineOwner.flushCompositingBits()&quot;]    D3 --&gt; D4[&quot;pipelineOwner.flushPaint()&quot;]    D4 --&gt; D5[&quot;pipelineOwner.flushSemantics()&quot;]    D5 --&gt; D6[&quot;renderView.compositeFrame()&quot;]    D6 --&gt; E[&quot;buildOwner!.finalizeTree()&quot;]    E --&gt; F[&quot;unmount 不可恢复的 inactive Elements&quot;]
+
+核心代码// L1227: WidgetsBinding.drawFrame@overridevoid drawFrame() &#123;  // ... 省略调试逻辑  try &#123;    if (renderViewElement != null) &#123;      buildOwner!.buildScope(renderViewElement!);  // 1. 构建    &#125;    super.drawFrame();  // 2. 布局+绘制+合成    // super.drawFrame() 调用链:    //   RendererBinding.drawFrame()    //     → pipelineOwner.flushLayout()    //     → pipelineOwner.flushCompositingBits()    //     → pipelineOwner.flushPaint()    //     → renderView.compositeFrame()  &#125; finally &#123;    buildOwner!.finalizeTree();  // 3. 清理  &#125;&#125;
+
+
+七、帧调度机制 — SchedulerBindingflowchart TD    A[&quot;Vsync 信号&quot;] --&gt; B[&quot;handleBeginFrame(rawTimeStamp)&quot;]    B --&gt; C[&quot;处理 transientCallbacks (_transientCallbacks)&quot;]    C --&gt; D[&quot;handleDrawFrame()&quot;]    D --&gt; E[&quot;处理 persistentCallbacks (_persistentCallbacks)&quot;]    E --&gt; F[&quot;drawFrame() — 帧循环核心&quot;]    F --&gt; G[&quot;处理 postFrameCallbacks (_postFrameCallbacks)&quot;]
+
+帧回调类型
+
+
+回调类型
+注册方法
+用途
+
+
+
+transientCallback
+addTransientFrameCallback
+一次性动画回调，帧后自动移除
+
+
+persistentCallback
+addPersistentFrameCallback
+持久回调，每帧执行（如 drawFrame）
+
+
+postFrameCallback
+addPostFrameCallback
+帧后回调，执行一次后自动移除
+
+
+
+八、scheduleAttachRootWidget — 异步根挂载flowchart TD    A[&quot;scheduleAttachRootWidget(rootWidget)&quot;] --&gt; B&#123;&quot;_rootElement != null?&quot;&#125;    B --&gt;|是| C[&quot;_rootElement.widget.child = rootWidget&lt;br/&gt;markNeedsBuild()&quot;]    B --&gt;|否| D[&quot;attachRootWidget(rootWidget)&quot;]    D --&gt; E[&quot;attachToBuildOwner(RootWidget(child: rootWidget))&quot;]    E --&gt; F[&quot;RootWidget.attach(owner, null)&quot;]    F --&gt; G[&quot;createElement() → RootElement&quot;]    G --&gt; H[&quot;assignOwner → buildScope(mount)&quot;]
+
+
+九、WidgetsBindingObserver 观察者接口classDiagram    class WidgetsBindingObserver &#123;        &lt;&lt;interface&gt;&gt;        +didPopRoute() bool        +didPushRoute(route) bool        +didPushRouteInformation(info) bool        +didChangeAppLifecycleState(state)        +didChangeMetrics()        +didChangeTextScaleFactor()        +didChangePlatformBrightness()        +didChangeLocales()        +didChangeAccessibilityFeatures()        +handleStartBackGesture() bool        +handleUpdateBackGesture(progress) bool        +handleCommitBackGesture() bool    &#125;
+
+注册&#x2F;注销观察者：
+// 注册WidgetsBinding.instance.addObserver(observer);// 注销WidgetsBinding.instance.removeObserver(observer);
+
+
+十、从 runApp 到首帧渲染完整流程flowchart TD    A[&quot;runApp(MyApp)&quot;] --&gt; B[&quot;WidgetsFlutterBinding.ensureInitialized()&quot;]    B --&gt; C[&quot;BindingBase 构造&quot;]    C --&gt; D[&quot;7个 Binding 的 initInstances&quot;]    D --&gt; E[&quot;7个 Binding 的 initServiceExtensions&quot;]    E --&gt; F[&quot;scheduleAttachRootWidget(wrapWithDefaultView(MyApp))&quot;]    F --&gt; G[&quot;scheduleWarmUpFrame()&quot;]    G --&gt; H[&quot;handleBeginFrame()&quot;]    H --&gt; I[&quot;handleDrawFrame()&quot;]    I --&gt; J[&quot;drawFrame()&quot;]    J --&gt; K[&quot;buildScope → RootElement.mount → _rebuild&quot;]    K --&gt; L[&quot;Widget Tree 构建 → Element Tree 构建&quot;]    L --&gt; M[&quot;RenderObjectElement.mount → createRenderObject&quot;]    M --&gt; N[&quot;flushLayout → flushCompositingBits → flushPaint&quot;]    N --&gt; O[&quot;首帧渲染完成&quot;]
+
+
+十一、关键调用链总结
+
+
+场景
+调用链
+
+
+
+应用启动
+runApp() → ensureInitialized() → initInstances() × 7 → scheduleAttachRootWidget() → scheduleWarmUpFrame()
+
+
+根挂载
+attachRootWidget() → RootWidget.attach() → createElement() → buildScope(mount)
+
+
+每帧循环
+Vsync → handleBeginFrame() → handleDrawFrame() → drawFrame() → buildScope + flushLayout + flushPaint
+
+
+构建调度
+setState() → markNeedsBuild() → onBuildScheduled() → ensureVisualUpdate() → 请求 Vsync
+
+
+帧三阶段
+1.buildScope构建 → 2.super.drawFrame()布局+绘制+合成 → 3.finalizeTree清理
+
+
+]]></content>
+  </entry>
+  <entry>
+    <title>Flutter 记录</title>
+    <url>/2023/06/25/Flutter-%E8%AE%B0%E5%BD%95/</url>
+    <content><![CDATA[check 环境
+flutter doctor
+
+同意 Android 协议
+flutter doctor --android-licenses]]></content>
+      <categories>
+        <category>Flutter</category>
+      </categories>
+      <tags>
+        <tag>Flutter</tag>
+      </tags>
+  </entry>
+  <entry>
+    <title>Kotlin Exception Handling</title>
+    <url>/2023/08/08/Kotlin-Exception-Handling/</url>
+    <content><![CDATA[1. 普通处理异常
+这种是普通的写法，明了的处理异常Kotlin也支持多个catch捕获
+
+try &#123;    throw Throwable(&quot;Diy Exception&quot;)&#125;catch (e: Exception) &#123;    print(&quot;Exception-&gt; $&#123;e.message&#125;&quot;)&#125;finally &#123;    print(&quot;finally&quot;)&#125;
+
+2. inline模式处理异常
+封装处理不会导致程序异常终止, 易于使用, 提供代码质量和开发效率吐槽一点 kotlin 不支持异常检查很不好, 需要人去识别可能出现的各种异常, 在对接各类功能接口很容易被忽略异常
+
+fun main() &#123;    var p = Person()    p.name = null    nameCatch(action = &#123;        val n: String = p.name ?: fail(&quot;name is null&quot;)    &#125;, exceptionFinally = &#123;        print(&quot;exceptionFinally&quot;)    &#125;)    print(&quot;================&quot;)    print(5)    print(&quot;================&quot;)&#125;inline fun nameCatch(action: () -&gt; Unit, exceptionFinally: () -&gt; Unit) &#123;    try &#123;        action()    &#125; catch (e: Exception) &#123;        print(&quot;inline try catch -&gt; $&#123;e.message&#125;&quot;)    &#125; finally &#123;        exceptionFinally()    &#125;&#125;]]></content>
+      <categories>
+        <category>Kotlin</category>
+      </categories>
+      <tags>
+        <tag>Kotlin</tag>
+      </tags>
+  </entry>
+  <entry>
+    <title>文章标题</title>
+    <url>/2026/08/12/Flutter-%E7%9F%A5%E8%AF%86%E6%B1%87%E6%80%BB/</url>
+    <content><![CDATA[Flutter 开发工程师面试指南
+注意：Flutter&#x2F;Dart 持续演进，线程模型、渲染后端等答案应说明版本和平台语境。
+
+目录
+能力模型与面试方法
+Dart 语言与运行时
+Flutter Framework 与三棵树
+布局、绘制、合成与渲染
+生命周期、Context、Key 与路由
+状态管理与应用架构
+网络、缓存、数据层与离线能力
+Platform Channel、FFI 与插件
+性能优化与 DevTools
+稳定性、安全与可观测性
+测试、工程化与发布
+大型项目架构与团队治理
+真实项目与线上故障题
+系统设计题
+编码与调试题
+领导力与行为面试
+评分表与录用建议
+候选人准备清单与 STAR 模板
+
+
+1. 能力模型与面试方法1.1 能力矩阵
+
+
+维度
+合格资深
+优秀资深
+
+
+
+Dart
+掌握类型、异步、泛型、空安全
+理解 Event Loop、Isolate、编译与内存边界
+
+
+Framework
+理解 Widget&#x2F;Element&#x2F;RenderObject
+能沿更新、布局、绘制、合成链路定位问题
+
+
+架构
+能组织清晰的数据流与模块边界
+能支撑多人、多业务、多端长期演进
+
+
+性能
+会用 DevTools 定位常见问题
+建立基线、监控、回归与治理闭环
+
+
+稳定性
+能处理异常、崩溃和网络失败
+能做分级、灰度、止损、复盘和防复发
+
+
+原生能力
+会使用 Channel 和常见插件
+能开发插件并排查跨端生命周期&#x2F;线程问题
+
+
+测试工程
+能写 Unit&#x2F;Widget&#x2F;Integration Test
+能治理 flaky case、流水线和发布门禁
+
+
+领导力
+能评审代码、指导成员
+能推动跨团队决策并承担业务结果
+
+
+能力可分为：L1 知道、L2 理解、L3 应用、L4 治理、L5 引领。资深岗位通常要求核心领域达到 L3，至少一个专项达到 L4。
+1.2 90 分钟建议流程
+
+
+环节
+时间
+重点
+
+
+
+项目与职责确认
+10 分钟
+规模、角色、复杂度
+
+
+Dart&#x2F;Flutter 原理
+20 分钟
+基础深度与心智模型
+
+
+架构和工程实践
+20 分钟
+设计、边界、落地
+
+
+性能或故障深挖
+15 分钟
+证据、工具、闭环
+
+
+系统设计
+15 分钟
+澄清、权衡、演进
+
+
+编码或领导力
+10 分钟
+代码质量、协作影响
+
+
+1.3 通用评分与真实性验证单题按四级评分：
+
+0 分：不知道或有明显事实错误。
+1 分：知道术语&#x2F;API，无法解释原理。
+2 分：能解释原理、边界和常见实践。
+3 分：有真实案例、数据、权衡和防复发措施。
+
+项目题连续追问：
+
+DAU（日活跃用户数）、页面&#x2F;模块数量、团队规模、目标平台是什么？
+原始指标和用户影响是什么？
+用什么日志、Trace、Profiler 或实验定位？
+放弃过什么方案，为什么？
+如何灰度、回滚和验证？
+P50&#x2F;P90&#x2F;P99（第 50&#x2F;90&#x2F;99 百分位数）、崩溃率、内存、包体积改善多少？
+如何通过测试、监控、Lint 或流程防复发？
+
+参考回答
+
+项目规模：先统一统计口径，再说明 DAU&#x2F;峰值、核心页面与模块数、目标平台、团队规模及个人职责。数据可以给区间，但应注明周期，避免只说“项目很大”。
+基线与影响：用“设备和版本范围—原始指标—用户或业务影响”描述，例如“中低端 Android 的信息流 P90 帧耗时为 28 ms，快速滑动退出率上升 3%”。技术指标必须能对应体验。
+定位证据：根据症状选择工具并形成证据链。崩溃看聚合堆栈与上下文日志，卡顿看 Timeline 的 UI&#x2F;Raster 帧，网络慢看 Trace，内存看 Heap Snapshot；再用二分开关、对照实验或最小复现验证因果。
+方案取舍：说明候选方案、预期收益、复杂度和风险，以及放弃依据。例如并非给所有列表项增加 RepaintBoundary，因为实测 Layer 和显存成本大于少量绘制收益。
+灰度与回滚：使用远程开关、设备&#x2F;版本分层和小流量灰度；预设崩溃率、卡顿率等止损阈值，异常时关闭新链路或回滚。验证时同时观察目标指标与内存、崩溃等护栏指标。
+结果数据：报告相同统计口径下的“基线 → 结果”、P50&#x2F;P90&#x2F;P99 和副作用，例如“P90 首帧从 1.8 秒降至 1.3 秒，P99 未恶化，峰值内存增加 4 MB”。平均值不能代表长尾用户。
+防复发：按根因选择回归测试、性能基线、线上告警、Lint、发布门禁或故障手册。竞态不一定适合 Lint，更适合状态机测试、可控异步测试和线上监控。
+
+风险信号
+
+只有“优化很多”“体验明显提升”，没有数据。
+只列库名，无法说明数据流和生命周期。
+无法区分个人贡献与团队成果。
+没有失败方案、代价、灰度或回滚意识。
+
+
+2. Dart 语言与运行时2.1 知识清单
+类型推断、泛型、类型边界、sound null safety。
+final、const、late、不可变对象。
+class、mixin、extension、sealed class、pattern。
+Closure、集合控制流、异常与 Zone。
+Future、Stream、Event Loop、microtask、Isolate。
+JIT&#x2F;AOT、Debug&#x2F;Profile&#x2F;Release、GC 基本模型。
+
+2.2 final、const 与不可变对象参考答案
+
+final 变量只赋值一次，值可在运行时确定。
+const 是编译期常量，其对象图也必须满足常量要求；相同常量可能 canonicalize。
+final List 只是引用不可重指，列表内容仍可能修改。
+const Widget 可减少对象创建并帮助框架识别相同配置，但不保证 build() 永不执行。
+
+追问：const 如何影响 Element 更新？为什么 final DateTime.now() 合法？不可变状态对并发和测试有什么价值？
+追问答案
+
+const 与 Element：相同常量表达式可能得到同一 Widget 实例，框架在更新子节点时可快速确认配置未变并复用 Element，减少对象创建和部分更新工作。但依赖的 InheritedWidget 变化时仍可能执行 build()；const 是低成本优化，不是控制重建范围的万能方案。
+final DateTime.now()：final 只要求变量赋值一次，值可以在运行时产生；DateTime.now() 因而合法。const 要求编译期可确定，而“当前时间”只有运行时才知道，所以不能写成 const DateTime.now()。
+不可变状态的价值：每次变化产生新快照，旧值不会被隐式修改，数据流更容易推理、比较和回放；Reducer 测试也可直接验证“旧状态＋事件＝新状态”。Isolate 本就不共享普通对象堆，因此不可变能降低业务竞态和消息语义复杂度，但不能代替取消、顺序控制等并发设计。
+
+风险信号：认为 final 等于深度不可变，或认为加 const 就能解决所有 rebuild。
+2.3 空安全与 late参考答案
+T 与 T? 明确区分非空和可空类型，flow analysis 根据控制流做类型提升。late 把初始化检查推迟到运行时，读取未初始化变量会失败；late final 适合生命周期稍后初始化且只写一次的字段。异步数据更适合用 loading&#x2F;success&#x2F;error 状态建模，而不是大量使用 !。
+追问：哪些写法会阻止类型提升？何时选择可空字段而不是 late？异步初始化如何避免竞态？
+追问答案
+
+类型提升失败：当分析器无法证明检查后值仍不变时，通常不会提升，例如变量可能被重新赋值、闭包可能写入它，或 getter 每次读取都可能返回不同值。字段提升能力随 Dart 版本演进；最稳妥的通用做法是先把值保存到局部 final 变量再判断。
+T? 还是 late：null 是合法业务状态时用 T?，例如用户可能没有头像；对象保证在首次读取前完成初始化时才用 late final，例如在 initState 创建 Controller。初始化时序不可靠时，late 只会把编译期问题推迟成运行时异常。
+异步初始化竞态：既要管理生命周期，也要校验结果是否仍然有效。mounted 只能防止销毁后更新，不能防止用户 A 的迟到响应覆盖用户 B；应配合取消令牌、递增的 generation/requestId 或 switchMap，提交结果前再次核对当前参数。
+
+2.4 Event Loop、Future 与 microtask参考答案
+每个 Isolate 有独立 Event Loop。通常先清空 Microtask Queue，再处理 Event Queue 中的一个事件。Timer、I&#x2F;O、平台消息通常作为事件处理；连续创建 microtask 可能饿死事件队列，影响输入与帧调度。
+void main() &#123;  print(&#x27;A&#x27;);  Future(() =&gt; print(&#x27;event&#x27;));  scheduleMicrotask(() =&gt; print(&#x27;microtask&#x27;));  print(&#x27;B&#x27;);&#125;// 常见顺序：A、B、microtask、event
+
+async 函数在第一个 await 前同步执行；await 让出执行权，后续通过异步延续恢复。未 await 的 Future 可能让错误逃逸当前 try/catch。
+追问：如何处理重复提交、过期响应和组件销毁后的更新？为什么不能靠猜测复杂异步顺序？
+追问答案
+
+三类问题分别治理：重复提交用按钮互斥并配合服务端幂等键；过期响应用取消、请求版本号或“只保留最新任务”的操作符；组件销毁时取消 Timer、Subscription 和请求，并在不可取消回调提交 UI 前检查 mounted。
+不能猜顺序：代码按 A、B 发出请求，不代表 A 一定先返回；I&#x2F;O、调度和平台消息都会改变完成顺序。复杂流程应使用显式状态机、序列号、结构化日志以及 fake async&#x2F;可控 Future 测试，而不是依赖偶然观察到的顺序。
+
+2.5 Future 与 Stream 如何选择？参考答案
+
+Future&lt;T&gt; 表达一次成功或失败。
+Stream&lt;T&gt; 表达一系列随时间到达的事件。
+单订阅流适合明确消费方；广播流可有多个监听者，但晚订阅者通常收不到历史事件。
+设计时应明确取消、错误、完成、暂停和资源释放语义。
+
+追问：async*、yield、yield* 的作用？WebSocket 和搜索联想如何避免泄漏与竞态？
+追问答案
+
+生成异步流：async* 声明一个异步事件序列，yield 发出单个事件，yield* 转发另一个 Stream，并在其结束后继续执行。取消和错误会沿流传播，持有外部资源时应在 try/finally 中释放。
+WebSocket 生命周期：保存并取消订阅，页面或会话结束时关闭连接；重连使用上限、指数退避和抖动，并避免前后台切换产生重复连接。
+搜索联想时效性：先 debounce，再取消旧请求或使用 switchMap，同时保留查询版本校验，防止无法真正取消的迟到响应覆盖新结果。
+
+2.6 Isolate 什么时候使用？参考答案
+Isolate 独享内存和 Event Loop，通过消息通信，不共享可变状态。UI Isolate 上的 CPU 密集任务会阻塞帧生产。一次性计算优先考虑 Isolate.run()；长期 Worker 可用 Isolate.spawn()、ReceivePort 和 SendPort。
+适合大 JSON 解析、图片处理、压缩、加密和复杂计算；不适合很短的任务，也不必为普通异步 I&#x2F;O 创建 Isolate。需评估启动、序列化和大对象传输成本。
+追问
+
+TransferableTypedData 解决什么问题？
+Worker 如何处理超时、取消、错误回传和退出？
+为什么 Isolate 不是通用线程池？
+
+追问答案
+
+TransferableTypedData：fromList 创建包装对象时会复制输入字节；该包装对象跨 Isolate 发送时，可在常数时间内转移其 materialize() 权限（即取出内部字节缓冲区的权利），适合图片、音视频帧等大块二进制数据。发送后，发送侧包装对象不能再 materialize()，但创建它时传入的原始 TypedData 不会因此失效。
+长期 Worker 治理：消息携带任务 ID；超时后发送协作式取消并丢弃迟到结果；业务错误用结构化结果返回，未捕获错误和退出通过 error&#x2F;exit port 感知；结束时关闭 ReceivePort。kill 只能作为任务无法协作退出时的兜底。
+不是通用线程池：每个 Isolate 有独立堆和 Event Loop，启动、序列化和消息传输都有成本，也不能直接共享可变对象。可以建立固定 Worker 池处理足够重的纯计算，但大量细粒度任务通常得不偿失。
+
+2.7 JIT、AOT 与构建模式参考答案
+
+Debug 常用 JIT 支持 Hot Reload，但性能不能代表线上。
+Release 使用 AOT 和优化后的运行配置。
+Profile 接近 Release 且保留分析能力，是性能测量主要模式。
+Web 与原生平台的编译运行模型不同，不能混为一谈。
+
+判断点：候选人若用 Debug 数据证明性能收益，应追问测量有效性。
+
+3. Flutter Framework 与三棵树3.1 Flutter 架构参考答案
+
+Framework：Dart 编写，包含 Widgets、Rendering、Animation、Gesture、Material&#x2F;Cupertino。
+Engine：主要由 C++ 实现，负责 Dart Runtime、文本、光栅化、合成等，通过 dart:ui 暴露能力。
+Embedder：对接窗口、输入、平台生命周期并将 Engine 嵌入具体平台。
+
+现代版本应结合平台说明渲染后端；Impeller 已广泛使用，不能无条件回答“Flutter 始终使用 Skia”。
+3.2 Widget、Element、RenderObject 的职责参考答案
+
+Widget 是不可变配置，描述“想要什么”。
+Element 是 Widget 在树中的实例化位置，跨帧持久存在，连接 Widget 与底层对象。
+RenderObject 负责布局、绘制、命中测试等。
+
+父节点更新时，框架依据 runtimeType 和 key 判断能否复用 Element；可复用则更新配置，否则替换子树。Widget 廉价且可频繁创建，Element&#x2F;RenderObject 才承载更持久的生命周期与状态。
+追问
+
+StatefulWidget 的状态保存在哪里？
+setState() 后为何不是整棵应用全部重绘？
+StatelessWidget 是否一定比 StatefulWidget 更快？
+
+追问答案
+
+State 保存位置：状态在 State 对象中，由对应的 StatefulElement 持有，而不是放在不可变的 StatefulWidget 中。新旧 Widget 的 runtimeType 和 key 匹配时，Element 与原 State 可以继续复用。
+不会全应用重绘：setState() 只把关联 Element 标记为 dirty；下一帧从该位置重建。Widget.canUpdate 只用 runtimeType 和 key 判断能否复用 Element，并不比较字段值；复用后仍会按需执行 update&#x2F;build。只有新旧 Widget 是同一实例等情况才能直接短路部分更新，后续是否 relayout&#x2F;repaint 则取决于约束、渲染属性和边界是否变化。
+两者没有绝对快慢：StatefulWidget 只是多了 State 生命周期，真实成本更多取决于重建范围、布局和绘制复杂度。把局部状态放在正确位置，反而能减少祖先的大范围更新。
+
+优秀信号：区分 rebuild、relayout、repaint，理解 dirty 标记和边界。
+3.3 setState() 到屏幕变化的链路参考答案
+setState() 同步执行回调并将关联 Element 标记为需要重建。下一帧构建阶段执行 build()，根据新旧 Widget 更新 Element 子树；必要时触发布局、绘制和合成，最终由 Engine 光栅化呈现。重建不等于重新布局或重绘整个页面。
+风险信号：认为 setState() 立即同步绘制屏幕，或每次都重建整个 App。
+3.4 InheritedWidget 的依赖机制参考答案
+后代通过 dependOnInheritedWidgetOfExactType 建立依赖；InheritedWidget 更新且 updateShouldNotify 返回 true 时，依赖它的 Element 会收到更新并重建。context.read 类操作通常只读取，watch/select 才建立不同粒度的订阅，具体语义取决于库。
+追问：为什么在错误生命周期调用会出问题？如何降低大范围重建？select 的收益和代价是什么？
+追问答案
+
+生命周期限制：建立 Inherited 依赖要求 Element 已进入可追踪依赖的活动阶段。initState 只执行一次，无法正确响应依赖变化，应在 didChangeDependencies 或 build 中订阅；dispose 时树已不稳定，也不应再向上查找。
+缩小更新范围：缩小状态作用域，在真正消费数据的叶子节点订阅，并拆分 Provider&#x2F;InheritedWidget 与 Widget；稳定不可变状态、const 子树和 selector 都可辅助。是否需要优化仍应由 Timeline 证明，不能把所有卡顿都归因于 rebuild。
+select 的取舍：它只订阅状态投影，可减少无关重建；代价是每次更新都要执行选择与相等比较，并要求结果稳定。每次创建新集合可能仍持续重建，原地修改可变集合又可能漏掉更新。
+
+
+4. 布局、绘制、合成与渲染4.1 Flutter 布局规则参考答案
+可概括为：约束向下传递，尺寸向上传递，父节点决定位置。父 RenderObject 给子节点 Constraints，子节点在约束内选择 Size，父节点再决定子节点偏移。
+典型问题
+
+Column 中的垂直 ListView 获得无界高度。
+Row 中长文本未通过 Expanded/Flexible 获得可用宽度。
+Unbounded width/height 不是“Flutter 坏了”，而是约束关系不成立。
+
+4.2 一帧经历哪些阶段？参考答案
+常见框架阶段包括动画、build、layout、paint、compositing&#x2F;scene build，随后由 Engine 光栅化并提交 GPU。不同版本和平台的线程实现会变化，不应机械背诵固定线程数量。自 Flutter 3.29 起，iOS&#x2F;Android 的 UI 与平台线程模型已有合并变化，回答应以所用版本为准。
+追问
+
+UI 时间与 Raster 时间分别高说明什么？
+VSync 与 60&#x2F;90&#x2F;120 Hz 帧预算是什么？
+为什么 Profile 模式和真机更可信？
+
+追问答案
+
+UI 时间高：通常是 Dart&#x2F;Framework 工作过重，应检查同步计算、频繁 build 和复杂 layout。Raster 时间高通常指向大图、阴影、模糊、离屏层、裁剪或 Layer 合成；两者都高时要分别采样，不能只看 FPS。
+帧预算：60&#x2F;90&#x2F;120 Hz 的理论截止时间约为 16.67&#x2F;11.11&#x2F;8.33 ms。UI 与 Raster 可以流水并行，因此不是简单把二者相加；任一关键阶段错过显示截止时间都可能掉帧。
+测量环境：Profile 的编译和运行特征更接近 Release，又保留分析能力；真机才能反映真实 CPU&#x2F;GPU、内存、温控和系统调度。最终仍要用代表性设备分层及线上指标验证。
+
+4.3 RepaintBoundary 的作用与边界参考答案
+RepaintBoundary 可以隔离绘制脏区域，并可能形成独立合成层，使静态区域避免随频繁动画重绘。但过度使用会增加 Layer、内存和合成成本。应通过 Repaint Rainbow、Timeline 和 Layer 观察验证，而非全局添加。
+4.4 saveLayer、Opacity、Clip 为什么可能昂贵？参考答案
+某些效果需要离屏缓冲，增加 GPU 目标切换和内存带宽；Opacity 可能引入额外合成，复杂裁剪和阴影也可能扩大成本。具体是否昂贵取决于实现、范围、缓存和渲染后端。优先选择无需离屏层的等价实现，并用工具测量。
+4.5 手势命中与竞技场参考答案
+命中测试确定指针事件经过的 RenderObject 路径；多个 GestureRecognizer 可进入 Gesture Arena，等待移动距离、方向、时间等信息后竞争胜负。事件分发、命中测试和手势识别是不同层次。
+追问：嵌套滚动冲突如何定位？HitTestBehavior 的三种行为？为何 IgnorePointer 与 AbsorbPointer 不同？
+追问答案
+
+嵌套滚动冲突：先确认命中路径和参与竞技场的 recognizer，再看滚动方向、触发阈值、ScrollPhysics 与父子控制器。统一滚动轴时优先用 CustomScrollView&#x2F;Sliver，而不是把多个独立 Scrollable 强行嵌套。
+HitTestBehavior：deferToChild 仅在子节点命中时自身才参与；opaque 占据自身范围并阻止后方同位置目标命中；translucent 即使自身视觉透明也参与命中，同时允许后方目标进入命中结果。它控制命中测试，不直接决定手势竞技场最终胜者。
+IgnorePointer 与 AbsorbPointer：前者让自身和子树不参与指针命中，事件可落到后方；后者自身命中并截住事件，子树和后方都收不到。选择取决于是需要“穿透”还是“遮挡”。
+
+5. 生命周期、Context、Key 与路由5.1 State 生命周期参考答案
+典型顺序为：构造 State → initState → didChangeDependencies → build；父组件提供新配置时调用 didUpdateWidget；临时移出树可能调用 deactivate；永久移除调用 dispose。reassemble 主要与开发期 Hot Reload 有关。
+实践边界：
+
+initState 中初始化 Controller、订阅或启动一次性任务。
+依赖 InheritedWidget 的初始化放在 didChangeDependencies。
+didUpdateWidget 比较新旧配置并调整订阅。
+dispose 释放 Controller、Subscription、Timer、Observer。
+异步回调更新 UI 前考虑 mounted，但更重要的是取消无效任务。
+
+追问：为什么不应让 initState 本身为 async？切换用户 ID 时如何重建订阅？deactivate 与 dispose 有何区别？
+追问答案
+
+initState 不应声明为 async：void initState() async 会成为 async-void；框架仍按同步生命周期方法调用它，不会等待异步工作结束，也无法把异步完成纳入生命周期顺序。应保持 initState 同步，在其中启动单独的异步方法，并处理取消、异常、mounted 和过期结果。
+切换订阅：在 didUpdateWidget 比较 oldWidget.userId 与新值；变化时先取消旧订阅，再按新 ID 创建订阅。cancel() 返回的 Future 表示上游异步清理完成；若切换还包含无法立即终止的异步加载，则用 generation（请求代次号）丢弃旧任务的迟到结果。
+deactivate 与 dispose：deactivate 表示临时从当前位置移除，Element 仍可能在同一帧被重挂载；dispose 表示永久卸载，State 不会再回到树中。最终资源释放应放在 dispose，临时树操作才考虑 deactivate。
+
+5.2 BuildContext 是什么？参考答案
+BuildContext 本质是 Element 的接口，代表当前 Widget 在 Element 树中的位置。查找 Theme、Navigator、Provider 等都依赖这个位置，因此同一段代码使用不同 Context 可能得到不同结果。跨异步间隙使用 Context 前需确认组件仍 mounted，且应避免长期保存 Context。
+经典场景：刚创建 Scaffold、Navigator 或 Provider 后，用其上方 Context 查找会失败；可用 Builder、拆分子 Widget 或正确作用域解决。
+5.3 Key 如何选择？参考答案
+
+无 Key：同级位置和类型决定复用。
+ValueKey：用稳定业务 ID 标识同级项。
+ObjectKey：仅按对象身份标识，内部使用 identical，不会调用对象的值相等比较。
+UniqueKey：强制每次成为不同身份，不适合稳定列表。
+GlobalKey：可跨位置识别 Element、访问 State&#x2F;Context，也支持子树重挂载，但成本和耦合更高。
+
+追问：可排序列表为何需要 Key？Key 应放在包装层还是内容层？GlobalKey 为什么不能作为默认通信方案？
+追问答案
+
+排序需要 Key：无 Key 时框架主要按同级位置和类型复用 Element，排序后旧 State 可能落到另一条业务数据上。稳定 ValueKey(item.id) 让状态跟随实体，而不是跟随数组下标。
+放置层级：Key 应放在参与兄弟比较的最外层列表项。如果兄弟节点是 Padding，Key 就应放在 Padding 或外层 KeyedSubtree，只放到内部内容层来不及影响第一层匹配。
+避免滥用 GlobalKey：它有全局唯一性、子树重挂载和更高维护成本，也会让组件通过 Context&#x2F;State 彼此耦合。普通通信优先回调、状态提升或状态容器；只有确需跨父节点保持 State、访问表单等少数场景再使用。
+
+5.4 路由和深链设计资深答案应覆盖：
+
+声明式路由与命令式 Navigator 的取舍。
+URI 到业务页面的解析、鉴权拦截、参数校验和兜底。
+Web URL 同步、浏览器前进后退、嵌套路由。
+多 Tab 独立导航栈和状态恢复。
+未登录跳登录后恢复原意图。
+深链版本兼容、来源校验和埋点。
+
+风险信号：只会 Navigator.push，未考虑回退栈、冷启动、鉴权和非法参数。
+
+6. 状态管理与应用架构6.1 如何选择状态管理方案？参考答案
+先判断状态：
+
+生命周期：局部、页面、流程、全局、持久化。
+来源：用户输入、服务端、设备、派生状态。
+更新模式：事件驱动、响应式流、简单可变状态。
+约束：可测试性、团队熟悉度、调试能力、代码生成、迁移成本。
+
+Provider、Riverpod、Bloc&#x2F;Cubit、Redux、GetX 等只是实现手段。资深工程师应解释依赖方向、状态所有权、订阅粒度和副作用位置，而不是宣称某库“最好”。
+6.2 如何区分 UI State、Domain State 和 Server State？
+UI State：选中项、动画、输入焦点，通常靠近 Widget。
+Domain State：业务流程和规则，应独立于具体 UI。
+Server State：远端数据的缓存、刷新、过期和同步状态。
+
+把所有状态放进全局容器会造成生命周期过长、耦合和重建扩大；把所有状态都留在页面又会导致复用、测试和跨页流程困难。
+6.3 单向数据流有什么价值？事件触发业务处理，产生新状态，UI 根据状态渲染。它使状态变化可追踪、可测试和可重放，并减少多个视图直接互改数据。代价是样板代码和简单场景的复杂化，因此应按业务复杂度采用。
+6.4 副作用放在哪里？网络请求、持久化、导航、Toast、埋点都属于副作用。应让纯状态转换与副作用分离，明确触发条件、幂等、取消和错误处理。导航&#x2F;提示类一次性事件不能简单永久存进可重放状态，否则旋转、恢复或重订阅可能重复消费。
+6.5 Clean Architecture 是否必要？参考答案
+核心不是目录层数，而是依赖方向和变化隔离。常见边界：
+
+Presentation：渲染、交互和页面状态。
+Domain：实体、用例、业务规则。
+Data：Repository 实现、远端&#x2F;本地数据源、DTO 映射。
+
+小项目无需机械创建大量 interface&#x2F;use case；大型项目则需通过边界控制业务、平台和基础设施耦合。抽象应服务真实替换点与测试需求。
+优秀信号：能说明哪些层被合并过、为何合并，以及何时再拆分。
+6.6 依赖注入与 Service Locator构造注入依赖显式、便于测试；Service Locator 使用方便但可能隐藏依赖和生命周期。无论采用何种容器，都要定义 singleton、lazy singleton、factory、页面作用域的释放规则，并避免测试之间残留全局状态。
+
+7. 网络、缓存、数据层与离线能力7.1 网络层应具备什么能力？
+统一 Base URL、Header、序列化和错误模型。
+Token 注入与安全刷新，避免并发刷新风暴。
+超时、取消、重试、退避与幂等。
+网络日志脱敏、Trace ID、耗时分段和指标。
+TLS、安全存储、证书策略按风险场景设计。
+DTO 与 Domain Model 解耦，兼容字段缺失和接口演进。
+
+追问：401 同时发生 20 次如何只刷新一次 Token？POST 能否自动重试？页面退出后如何取消请求？
+追问答案
+
+并发 401：使用 single-flight（并发请求共享同一个在途任务）。第一个 401 创建并保存刷新 Token 的共享 Future，其余请求等待同一个任务；成功后原子更新 Token，再重放原请求。刷新接口不能再次进入刷新拦截，每个原请求最多自动重放一次，退出登录或账号切换还需用 session generation（会话代次号）隔离旧结果。
+POST 重试：不能只按 HTTP 方法判断。请求可能已被服务端执行而响应丢失，盲目重试会重复下单或扣款。只有携带 idempotency key（幂等键）、服务端支持去重，或能确认业务尚未执行时才可自动重试；支付等场景通常先查询状态。
+页面退出取消：页面或 ViewModel 持有取消句柄并在 dispose 中取消，Repository 将信号传递到 HTTP 客户端。只检查 mounted 不能停止网络、解析和缓存副作用；共享请求还要用独立订阅或引用计数，避免一个页面退出取消其他消费者的数据源。
+
+7.2 统一错误模型如何设计？至少区分：
+
+网络不可达、DNS、连接&#x2F;读取超时。
+HTTP 状态错误。
+业务错误码。
+数据解析或契约错误。
+认证过期、权限不足。
+用户取消与未知错误。
+
+错误模型服务于恢复策略，而不只是统一 Toast。可恢复错误提供重试，认证错误进入续期或登录，契约错误应告警并保留脱敏上下文。
+7.3 缓存策略如何选？常见策略包括 Cache First、Network First、Stale-While-Revalidate 和仅离线缓存。需要明确：
+
+缓存 Key、TTL、容量与淘汰。
+用户&#x2F;租户隔离和登出清理。
+Schema 版本与迁移。
+数据新鲜度展示。
+多端修改冲突与一致性要求。
+敏感数据是否允许落盘及加密方式。
+
+7.4 如何设计离线写入与同步？本地先生成稳定操作 ID，写入 Outbox 并更新乐观 UI；网络恢复后按顺序或依赖关系同步。服务端需支持幂等，客户端记录重试次数和失败原因。冲突策略可为服务端优先、客户端优先、字段合并或用户决策，必须由业务语义决定。
+优秀信号：考虑 App 被杀、时钟不一致、重复提交、部分成功和迁移失败。
+7.5 大 JSON 为什么卡顿？如何处理？先在 Profile 模式用 CPU Profiler 确认解析和对象创建占用。可减少字段&#x2F;层级、分页或流式处理；CPU 解析确实阻塞 UI 时再迁移至 Isolate。还需评估数据跨 Isolate 传输和模型构建成本，不能只把 jsonDecode 包进 Worker 就宣告完成。
+
+8. Platform Channel、FFI 与插件8.1 MethodChannel、EventChannel、BasicMessageChannel
+MethodChannel：类似异步 RPC，请求方法并返回一次结果。
+EventChannel：原生到 Dart 的连续事件流。
+BasicMessageChannel：双向消息，适合自定义协议。
+
+Platform Channel 是异步消息机制；StandardMessageCodec 支持 JSON-like 基础类型及 TypedData。复杂接口可用 Pigeon 生成类型安全代码，减少字符串方法名和手工转换错误。
+8.2 如何设计健壮的 Channel？
+方法名、参数和错误码版本化。
+Dart&#x2F;Android&#x2F;iOS 三端语义一致。
+明确主线程要求和耗时任务调度。
+处理 Engine、Activity&#x2F;ViewController、StreamHandler 生命周期。
+热重启、重复注册、取消监听不泄漏。
+大数据避免频繁通过 Channel 复制；可让 Channel 只传元数据、受控文件路径&#x2F;句柄，或按平台采用共享内存、原生缓冲区、FFI，并明确权限、所有权、释放和失败清理。
+
+风险信号：仅能写 demo，未考虑生命周期、线程、错误、版本和测试。
+8.3 Pigeon 的价值和边界Pigeon 从接口定义生成 Dart 与宿主端代码，提供类型安全和一致的编解码约定，适合稳定的结构化接口。它不消除跨线程、生命周期、兼容和业务错误设计问题；接口变更仍需版本治理。
+8.4 FFI 与 Platform Channel 如何选择？
+调系统 SDK&#x2F;UI&#x2F;生命周期：通常用插件和 Platform Channel。
+调用 C ABI、高频计算或现有原生库：考虑 dart:ffi。
+FFI 需管理指针、内存所有权、线程安全、ABI 和动态库打包。
+不能在 Dart 中直接调用任意 Java&#x2F;Kotlin&#x2F;Swift API 而不做桥接。
+
+8.5 插件开发需要考虑什么？
+Federated Plugin：app-facing interface、platform interface、各平台实现。
+多 Engine、Add-to-App、后台执行和 Activity 重建。
+权限请求与拒绝后恢复。
+平台最低版本、架构产物、隐私声明。
+Mock platform interface、宿主端单测、示例 App 和集成验证。
+
+
+9. 性能优化与 DevTools9.1 正确的性能治理闭环测量 → 定位 → 假设 → 最小修复 → 对照验证 → 自动回归 → 线上监控
+必须说明设备、构建模式、数据规模、刷新率和统计口径。只列 const、RepaintBoundary、ListView.builder 不构成资深答案。
+9.2 如何定位掉帧？
+在 Profile 模式、代表性真机复现。
+查看 Performance Timeline，区分 UI 和 Raster 瓶颈。
+UI 高：看 build&#x2F;layout、同步 CPU、序列化、日志。
+Raster 高：看 shader、图片、模糊阴影、裁剪、离屏层和过度绘制。
+用 CPU Profiler、Widget rebuild、Repaint Rainbow、Layer 工具验证。
+固定场景重复采样，对比 P90&#x2F;P99，而非只看平均值。
+
+9.3 如何优化长列表？
+使用懒构建列表&#x2F;Sliver，不一次创建全部子项。
+提供稳定 Key，控制 item 状态所有权。
+避免 item 中大范围监听和高成本布局。
+尺寸固定时使用 itemExtent、prototypeItem 等提示。
+图片按显示尺寸解码，做缓存、占位和失败处理。
+分页防重、取消过期请求并控制预取。
+结合业务决定保活范围，避免无限 KeepAlive。
+
+9.4 如何治理启动耗时？拆分口径：
+
+OS 启动到 Flutter Engine&#x2F;首帧。
+首帧到可交互。
+可交互到关键数据可用。
+
+措施：
+
+缩短首帧前同步初始化。
+非关键 SDK 延迟并行初始化。
+优化首屏资源、字体、图片和本地迁移。
+原生侧和 Dart 侧统一 Trace。
+设计冷启动、温启动和热启动基线。
+
+不能通过展示静态启动图掩盖不可交互时间。
+9.5 内存泄漏如何定位？常见来源：未取消 Stream&#x2F;Timer、Controller&#x2F;Observer 未释放、闭包持有大对象、全局缓存无上限、GlobalKey&#x2F;Context 长期持有、图片缓存和原生资源未释放。
+使用 Memory 页观察 heap、external&#x2F;native memory（Dart 堆外&#x2F;原生内存）、GC、对象数量和 retaining path（引用保留路径）；通过多次进入退出页面做差分快照。单次内存上涨不等于泄漏，需证明对象应释放却仍被引用。
+9.6 图片性能
+解码尺寸应接近显示尺寸，避免小控件解码超大图。
+区分磁盘缓存、内存缓存、压缩文件大小与解码后内存。
+列表控制并发下载、预取和失败重试。
+大图查看器考虑分片&#x2F;缩放能力。
+监控缓存命中、失败率、解码耗时和内存峰值。
+
+9.7 包体积治理使用 App Size 工具和构建产物分析：
+
+按 ABI&#x2F;架构拆分，检查 native 库和符号。
+清理无用资源、字体字形和重复依赖。
+评估图片格式、代码生成和插件引入成本。
+Android&#x2F;iOS 分别分析，不能只看安装包压缩大小。
+在 CI 建立体积基线和增量预算。
+
+9.8 高频性能题评分
+
+
+回答
+评价
+
+
+
+“多用 const”
+初级，只给技巧
+
+
+能区分 UI&#x2F;Raster 并使用 Timeline
+合格
+
+
+有固定基准、分位数、前后数据
+优秀
+
+
+建立 CI 回归与线上指标治理
+资深&#x2F;专家
+
+
+10. 稳定性、安全与可观测性10.1 Flutter 异常如何分层捕获？参考答案
+
+Framework 回调中的错误可由 FlutterError.onError 处理。
+未被 Flutter 框架捕获的异步&#x2F;平台分发错误可通过 PlatformDispatcher.instance.onError 补充处理。
+Zone 可捕获其作用域内的未处理异步错误。
+Isolate、原生崩溃和系统 ANR&#x2F;OOM 需要各自通道。
+
+捕获不等于吞掉。应保留原始 StackTrace、版本、设备、路由、业务阶段和脱敏 breadcrumbs，并区分 fatal&#x2F;non-fatal。Debug 环境应保持错误可见。
+10.2 稳定性指标如何定义？
+Crash-free users&#x2F;sessions。
+Dart fatal、原生 crash、ANR、OOM。
+页面打开成功率、白屏率、关键链路成功率。
+网络失败率、接口 P95&#x2F;P99、解析失败率。
+卡顿帧&#x2F;慢帧比例、启动分位数、内存峰值。
+版本、系统、机型、渠道和实验组维度。
+
+只统计 crash 数量会受活跃量影响，需使用比例和影响用户数。
+10.3 线上事故处理流程
+确认告警真实性和影响范围。
+按版本、平台、机型、地域、用户群切片。
+先止损：关闭开关、回滚、降级、暂停发布。
+保留日志、Trace、Dump、请求 ID 等证据。
+最小复现，提出假设并验证。
+修复后灰度，观察领先指标和护栏指标。
+复盘根因、扩大因素、发现缺口和防复发事项。
+
+10.4 移动端安全重点
+Token&#x2F;密钥不硬编码，不把敏感数据明文存普通偏好。
+使用平台安全存储，但理解越狱&#x2F;Root 设备无法绝对可信。
+日志、埋点、Crash 上报做隐私脱敏。
+WebView 限制来源、JS Bridge 能力、文件访问和跳转协议。
+深链、Channel、剪贴板、通知内容都视为不可信输入。
+TLS 校验保持正确；证书绑定需评估轮换和失效风险。
+权限最小化，并说明使用目的和拒绝后的降级。
+
+风险信号：把 Base64、代码混淆或 HTTPS 单独视作完整安全方案。
+10.5 WebView 安全题问题：业务允许加载活动页并调用原生支付能力，如何设计？
+参考要点
+
+域名 allowlist（允许名单），禁止任意 URL 获得 Bridge。
+Bridge 方法最小化并做参数、来源、用户状态校验。
+高风险操作需要原生确认和服务端签名&#x2F;订单校验。
+限制 javascript:、文件协议、混合内容和任意跳转。
+建立页面版本、审计日志、紧急禁用开关。
+
+10.6 灰度与远程开关远程配置要有默认值、Schema、缓存、过期、拉取失败策略和审计。灰度按稳定标识分桶，避免用户每次重启换组。高风险开关应有 kill switch（紧急停用开关），但不能让配置系统成为绕过审核下发可执行代码的机制。
+
+11. 测试、工程化与发布11.1 Flutter 测试分层
+
+
+类型
+主要目标
+特点
+
+
+
+Unit Test
+纯逻辑、Use Case、Repository 策略
+快、隔离、数量多
+
+
+Widget Test
+Widget 渲染、交互、状态
+快于真机，可控制环境
+
+
+Golden Test
+视觉回归
+对字体、平台、像素环境敏感
+
+
+Integration Test
+关键用户链路和平台集成
+慢、成本高，但真实度高
+
+
+宿主端测试
+Android&#x2F;iOS 插件实现
+覆盖原生线程与生命周期
+
+
+合理策略是用大量 Unit&#x2F;Widget Test 覆盖逻辑和组件，再用少量但有代表性的 Integration Test 覆盖登录、支付、深链、权限或插件等关键跨层链路。数量应由业务风险决定，而不是用“足量”或单一覆盖率代替标准。
+11.2 如何写稳定的 Widget Test？
+通过语义、Key 或文本定位，避免依赖脆弱树结构。
+控制时钟、网络、随机数和外部依赖。
+pump() 推进一帧；pumpAndSettle() 等待无调度帧，但无限动画会超时。
+测行为和输出，不绑定内部实现。
+覆盖 loading、empty、error、success 和重试。
+
+11.3 Golden Test 的边界Golden 适合设计系统、核心组件和稳定页面，不适合替代交互测试。需要固定 Flutter 版本、字体、像素比、平台和渲染环境；评审差异时不能无脑更新基线。动态时间、网络图片和动画必须可控。
+11.4 Mock、Fake 与真实依赖如何选？
+纯逻辑用 Fake&#x2F;Mock 提高速度和确定性。
+数据库迁移、序列化契约、插件宿主实现需有真实集成验证。
+Mock 应验证关键交互，不应把内部调用顺序全部固化。
+契约测试可降低客户端与服务端 schema 漂移风险。
+
+11.5 如何治理 flaky test？记录失败率、重试后通过率和责任归属；治理真实原因，包括异步等待、共享状态、网络、动画、顺序依赖和环境差异。重试可用于收集证据，不应作为永久掩盖。隔离测试数据并输出截图、日志和时间线。
+11.6 推荐 CI 流水线
+格式检查和静态分析。
+Unit&#x2F;Widget Test，可并行和分片。
+关键 Golden Test。
+Android&#x2F;iOS 构建及签名配置检查。
+关键 Integration Test 真机&#x2F;模拟器矩阵。
+包体积、依赖漏洞、许可证和性能预算。
+产物签名、校验、归档和可追溯发布。
+
+常用命令：
+dart format --output=none --set-exit-if-changed .flutter analyzeflutter testflutter test integration_testflutter build appbundle --releaseflutter build ipa --release
+
+11.7 环境与配置治理
+Dev&#x2F;Staging&#x2F;Prod 配置可通过 flavor、编译参数和不同宿主配置管理。
+秘密不能因为使用 --dart-define 就变安全；客户端内的值最终可被提取。
+保证同一源码和锁定依赖可重现构建。
+签名材料放安全系统，采用最小权限与审计。
+发布产物必须能追溯 commit、依赖、配置和流水线。
+
+11.8 依赖和版本治理
+审核维护活跃度、许可证、平台代码和传递依赖。
+谨慎使用宽泛版本范围，应用项目提交 lockfile。
+升级 Flutter&#x2F;Dart 先跑兼容矩阵和关键链路。
+核心能力避免绑定无法维护的插件，必要时 fork 需明确回归上游策略。
+定期清理过期 override 和临时补丁。
+
+
+12. 大型项目架构与团队治理12.1 模块化如何划分？优先按业务能力切分 Feature，而不是只按技术层形成超大 widgets/services/models 目录。公共层仅放稳定、真正共享的能力。每个模块明确：
+
+对外 API 和内部实现。
+依赖方向与禁止依赖。
+路由、资源和状态所有权。
+测试策略与负责人。
+版本和迁移方式。
+
+风险信号：把文件拆成 package 就称为模块化，却存在循环依赖和任意跨层访问。
+12.2 Monorepo 与多仓库Monorepo 便于原子修改、统一工具和依赖协同，但构建、权限和工具规模更复杂；多仓库隔离清晰，跨仓变更和版本协调成本更高。选择取决于团队边界、发布节奏、代码共享和工具能力。
+12.3 多团队如何治理公共组件？
+设计 Token 和语义化 API，而非复制页面样式。
+组件有 owner、版本、变更日志和弃用周期。
+示例、Golden、无障碍和多语言测试。
+重大变更提供迁移工具或可执行指南。
+收集使用反馈，避免公共库成为无限参数集合。
+
+12.4 如何管理架构决策？通过轻量 ADR（Architecture Decision Record，架构决策记录）记录背景、约束、候选方案、决策、后果和复审条件。决策应可被新证据推翻。资深工程师既要防止无标准，也要防止架构委员会阻塞交付。
+12.5 Flutter SDK 升级策略
+盘点 breaking changes、插件和原生工具链。
+建立升级分支和编译&#x2F;测试基线。
+先解决 deprecation，再升级关键依赖。
+对启动、帧率、包体积、渲染和平台链路回归。
+分阶段合并与灰度，准备回滚。
+更新模板、CI、文档和团队规范。
+
+12.6 Add-to-App 的架构挑战
+FlutterEngine 预热与缓存，首开速度和内存的权衡。
+Native 与 Flutter 路由栈、返回手势和生命周期协调。
+多 Engine 的插件兼容和资源成本。
+登录态、主题、语言、埋点上下文同步。
+混合页面问题归属、监控关联和发布节奏。
+
+12.7 国际化、无障碍和多端适配
+文案使用资源键，处理复数、性别、日期、数字和 RTL（从右向左书写）布局。
+动态字体、文本缩放、最小触控区域、语义标签和焦点顺序。
+响应式设计基于可用空间和输入方式，而非只看设备型号。
+键鼠、触控、返回键、窗口缩放和平台惯例分别验证。
+
+12.8 Code Review 看什么？正确性、边界、生命周期、异步竞态、可测试性、性能、安全和可观测性；不把个人风格当成阻塞项。可自动化的格式与规则交给工具，人工评审聚焦设计和风险。重大变更要求测试证据、迁移和回滚说明。
+13. 真实项目与线上故障题13.1 首屏列表滑动严重卡顿题目
+一个信息流页面包含图片、富文本、视频预览和曝光埋点。中低端 Android 机滑动掉帧，如何排查？
+优秀回答路径
+
+固定版本、设备、数据和操作路径，在 Profile 模式建立基线。
+Timeline 区分 UI&#x2F;Raster；观察掉帧是否与新 item 进入、图片解码或曝光回调一致。
+UI 侧检查同步解析、item build、intrinsic layout、重复订阅、日志和埋点。
+Raster 侧检查超大图、模糊、裁剪、Opacity、saveLayer 和重绘范围。
+分别做最小实验，例如关闭视频&#x2F;图片&#x2F;埋点验证因果。
+采用懒构建、尺寸提示、图片降采样、预取限流、重绘隔离等针对性修复。
+记录 P90&#x2F;P99 帧耗时和慢帧率，并建立滚动性能回归。
+
+追问
+
+若 UI&#x2F;Raster 都高怎么办？
+曝光埋点如何避免每帧做重活？
+120 Hz 设备的预算有何变化？
+
+追问答案
+
+UI&#x2F;Raster 都高：分别采样两条链路，并用最小开关实验拆因果。例如先关闭同步解析与埋点观察 UI，再替换图片、阴影或视频观察 Raster；两者可能由同一数据规模同时放大，也可能是两个独立瓶颈，不能靠一个“万能优化”处理。
+曝光埋点：可见性计算只产生轻量事件，去重、批量聚合、序列化和网络发送移出逐帧回调；为同一曝光周期设计幂等 ID，并限频、背压。不要在每次滚动通知中同步做 JSON 编码和 I&#x2F;O。
+120 Hz 预算：理论单帧截止时间从 60 Hz 的 16.67 ms 缩短到约 8.33 ms。应按设备刷新率统计慢帧，避免拿固定 16 ms 阈值评价所有设备；同时关注持续吞吐、温控与功耗，而非只看一次流畅滑动。
+
+评分
+
+1 分：直接说加 const、RepaintBoundary。
+2 分：会用 Timeline 区分瓶颈。
+3 分：能设计实验、量化验证并防回归。
+
+13.2 页面反复进入后内存持续上涨题目
+图片编辑页每次进入退出后内存增加约 30 MB，最终 OOM。
+参考路径
+
+区分 Dart heap、external&#x2F;native、GPU&#x2F;图片内存。
+重复执行进入—操作—退出—GC，观察是否回落。
+做 heap snapshot diff，查看编辑模型、Controller、图片对象 retaining path。
+检查 Stream、Timer、Observer、Ticker、原生纹理和插件资源释放。
+验证修复后多轮操作的内存平台期（稳定区间），而不是只看某一时刻。
+
+强追问：Dart 对象已释放但内存仍不降有哪些可能？图片缓存是否等于泄漏？原生纹理如何建立释放证据？
+追问答案
+
+对象释放但进程内存不降：Dart VM 或系统分配器可能保留已申请内存供后续复用，GC 也不保证立即归还 OS；此外还有 external typed data、图片解码缓冲、GPU 纹理、原生库缓存和内存碎片。应同时观察对象数量、Dart heap、external&#x2F;native&#x2F;GPU 指标及多轮操作后的内存平台期。
+图片缓存不等于泄漏：有容量上限、可淘汰且在内存压力下可回收的缓存是性能策略；只有条目无界增长、Key 失控或生命周期结束后仍不可释放，才是泄漏或缓存治理缺陷。验证时应清缓存或制造内存压力做对照，而不是只看 RSS（进程常驻内存）。
+原生纹理释放证据：为纹理建立跨端唯一 ID，记录 create&#x2F;register&#x2F;use&#x2F;unregister&#x2F;dispose 的时间线；页面退出后检查原生对象计数、GPU&#x2F;Native 内存和插件回调，并在重复进入退出、前后台和 Engine 销毁场景下验证计数回到稳定值。Dart 包装对象消失不能单独证明底层纹理已释放。
+
+13.3 Token 刷新引发请求风暴题目
+Token 过期时多个接口同时 401，每个请求都刷新 Token，部分请求再次失败。
+优秀方案
+
+使用 single-flight：同一时刻只有一个刷新 Future。
+后续请求等待该 Future，成功后用新 Token 重放。
+请求标记只允许自动重放一次，防止死循环。
+刷新失败统一清理会话并触发一次登录流程。
+仅对幂等或明确可安全重试的请求自动重放。
+处理用户主动退出与刷新响应竞态，隔离账号世代。
+
+13.4 新版本发布后白屏率上升处理顺序
+
+立即暂停放量，判断是否可远程降级或回滚。
+按系统、机型、渠道、冷&#x2F;热启动、路由切片。
+关联 Flutter fatal、原生 crash、首帧和接口指标。
+检查初始化、数据库迁移、资源、路由和插件注册变化。
+用受影响设备&#x2F;环境复现，保留启动 Trace。
+修复并小流量灰度，同时观察白屏率与业务成功率。
+
+风险答案：先让用户清缓存或重装，没有止损和证据链。
+13.5 数据库迁移导致部分用户启动失败考察点
+
+迁移必须按 schema 版本顺序、事务化、可重复验证。
+发布前使用真实历史数据库快照覆盖多版本升级路径。
+大迁移避免阻塞首帧，评估分批和后台方案。
+失败时保留数据还是重建取决于业务价值，不能默认删库。
+监控迁移耗时、失败率和剩余空间。
+
+13.6 Platform Channel 偶发无回调定位路径
+
+确认 Dart 是否发出、原生 handler 是否注册、结果是否恰好返回一次。
+检查 Activity&#x2F;Engine 切换、插件 detach、后台恢复和线程。
+为每次调用加入 request ID、阶段日志、超时和取消。
+若有异步系统回调，确认对象未在生命周期切换后丢失。
+检查多 Engine 是否注册到错误 Messenger。
+
+13.7 iOS 正常、Android 低端机崩溃先分类 Java&#x2F;Kotlin crash、native crash、OOM 或 ANR；按 ABI、OS、GPU、内存档位切片。检查大图解码、native 库架构、插件线程、后台限制和厂商差异。不要因为 Flutter 代码跨平台就假设运行环境一致。
+13.8 搜索结果偶尔回退到旧关键词这是典型异步竞态。输入 A 后请求较慢，输入 B 后请求较快，B 先返回、A 后返回覆盖结果。可 debounce 降低频率，用序号&#x2F;当前 query 丢弃过期响应，或取消旧请求。还要处理页面销毁和错误状态。
+13.9 推送点击偶发打开错误页面检查通知 payload 版本、路由参数、登录态、冷启动初始化顺序和重复消费。将“接收通知”“解析意图”“满足前置条件”“导航”拆成可观测状态机，使用 notification ID 幂等，未知 payload 安全降级。
+13.10 包体积突然增加 20 MB用 App Size 分析和前一版本 diff，按 Dart AOT、assets、native library、resources 分类。重点检查新增插件的多架构二进制、重复字体、未压缩资源和调试符号。修复后建立每平台&#x2F;ABI 的增量预算。
+13.11 一次完整项目复盘题问题：讲一个你主导的最复杂 Flutter 项目。
+连续追问
+
+业务目标与规模是什么？
+你拥有的决策权和交付边界？
+最大技术风险是什么，如何提前识别？
+方案候选与取舍依据？
+哪次判断错了，造成什么后果？
+最终数据结果和长期维护成本？
+如果重做，哪些保持不变，哪些推翻？
+
+高分回答结构
+
+目标与规模：说明用户、核心链路、平台、流量&#x2F;数据量及成功标准，不用“复杂”代替事实。
+职责边界：区分自己决定、参与评审和团队共同完成的部分；同时说明不能决定的外部约束。
+风险识别：从原型、历史数据、容量估算、依赖成熟度和故障演练中提前发现风险，并说明风险未发生不等于识别没有价值。
+方案取舍：列出至少两个真实候选方案，用性能、交付、可维护性、迁移和回滚成本比较，而不是事后只描述胜出方案。
+错误判断：明确自己的假设哪里错、早期信号为何被忽略、如何止损及机制如何改变；不能把失败全部归因于其他团队。
+结果与成本：同时报告用户&#x2F;业务指标、技术分位数、稳定性和长期维护成本，说明观察窗口与数据口径。
+重做选择：保留被证据验证的原则，推翻过早抽象、错误边界或高运营成本设计，并解释新证据，而不是简单说“会做得更好”。
+
+优秀信号：承认不确定性和失败，能把技术指标连接到用户&#x2F;业务结果。
+13.12 故障复盘模板事件：一句话说明用户可见影响时间线：发现、响应、止损、修复、恢复影响：用户数、时长、业务损失、平台/版本根因：直接技术原因扩大因素：为什么影响被放大发现缺口：为何没有更早发现处置：临时止损与永久修复防复发：测试、监控、流程、负责人和完成条件
+
+
+14. 系统设计题14.1 通用作答框架
+澄清用户、核心链路、平台、规模和非功能目标。
+定义模块边界和依赖方向。
+画出数据流、状态流和副作用。
+设计网络、缓存、离线、同步与冲突。
+处理错误、降级、恢复、幂等和安全。
+定义性能、稳定性和业务指标。
+说明测试、发布、灰度和回滚。
+给出演进路线，避免一次性过度设计。
+
+14.2 设计一个支持离线的即时通讯模块需求澄清
+
+单聊&#x2F;群聊、消息类型、已读回执、撤回、搜索。
+弱网&#x2F;离线、消息量级、多设备一致性。
+加密、合规、推送和附件限制。
+
+参考设计
+
+本地数据库是 UI 的主要读取源。
+WebSocket&#x2F;长连接接收增量，REST 补历史和校准。
+发送消息先生成 client message ID，写 Outbox 并展示 sending。
+服务端按幂等 ID 去重，返回 server sequence 和时间。
+每会话用游标&#x2F;序列同步，缺口触发补拉。
+状态机：sending&#x2F;sent&#x2F;delivered&#x2F;read&#x2F;failed。
+附件独立上传，支持压缩、进度、取消和断点。
+推送只作为唤醒&#x2F;提示，回到服务端拉权威数据。
+
+深入追问
+
+本地临时消息如何与服务端消息合并？
+多设备撤回、乱序、重复和时钟漂移怎么办？
+数据库如何分页且保持列表锚点？
+密钥和消息内容如何保护？
+
+深入追问答案
+
+临时消息合并：本地发送时生成全局唯一的 clientMessageId；服务端按该 ID 幂等并返回 serverMessageId/sequence。数据库在一个事务中更新原记录的服务端字段和状态，不新增第二条消息；重连补拉时也按客户端 ID、服务端 ID 和会话序列去重。
+撤回、乱序、重复与时钟漂移：排序和同步以服务端 sequence&#x2F;逻辑版本为准，客户端时间只用于近似展示；撤回建模为带目标消息和版本的服务端事件，多设备按游标补拉。重复事件幂等应用，发现 sequence 缺口就补拉，不能依赖 WebSocket 到达顺序。
+分页与锚点：数据库用 (conversationId, serverSequence) 建联合索引，采用游标分页而非大 offset。加载更早消息前记录锚点消息 ID 与其视口偏移，插入后恢复相对位置；新消息到达时只有用户位于底部才自动跟随。
+内容保护：传输使用 TLS，静态数据按风险使用平台安全存储保护密钥并加密数据库&#x2F;附件；日志、通知预览、备份和截图也纳入隐私边界。若要求端到端加密，还需设计设备密钥、会话密钥轮换、多设备验证和丢失恢复，不能只说“AES 加密”。
+
+评分点
+
+
+
+项目
+分值
+
+
+
+需求与约束澄清
+15
+
+
+数据模型和状态机
+20
+
+
+离线、幂等、同步
+25
+
+
+性能和存储
+15
+
+
+安全与可观测性
+10
+
+
+测试、灰度、演进
+15
+
+
+14.3 设计大型电商 Flutter App应覆盖：
+
+首页、搜索、商品、购物车、订单按 Feature 模块化。
+用户、实验、设计系统、网络、监控作为平台能力。
+商品详情的聚合接口、缓存和降级。
+购物车本地乐观更新与服务端价格&#x2F;库存最终校验。
+下单链路防重、支付回调幂等、恢复未完成订单。
+多环境、动态配置、灰度、埋点一致性。
+大促时图片、接口、降级和流量保护。
+
+关键判断：客户端不能把展示价格或本地购物车当成最终交易权威。
+14.4 设计动态化首页服务端下发受限 Schema，客户端维护组件注册表、版本兼容和默认降级。Schema 必须校验大小、深度、组件 allowlist 和参数。预置组件而非下发任意 Dart 代码。建立预览、审计、灰度、缓存、过期和 kill switch。
+追问：未知组件怎么办？配置导致崩溃如何回滚？埋点如何保证跨模板一致？
+追问答案
+
+未知组件：解析阶段按组件类型和最低客户端版本校验；未知类型渲染安全占位或跳过局部模块，并上报模板版本、组件类型和客户端版本。不能让一个未知节点导致整页白屏，也不能静默掩盖长期契约不兼容。
+配置回滚：配置必须版本化、签名&#x2F;校验并保留最近可用版本。先停止服务端放量或触发 kill switch，客户端校验失败&#x2F;连续崩溃时回退内置默认或上一稳定缓存；按版本灰度恢复并监控页面成功率。
+埋点一致性：在 Schema 中定义稳定的语义事件和组件实例 ID，由统一渲染层自动补充模板、位置、实验和页面上下文；业务组件只提交受约束的参数。用 Schema 校验、契约测试和数仓质量监控防止同一事件跨模板含义漂移。
+
+14.5 设计多 Tab 独立导航应用每个 Tab 可维护独立 Navigator 和栈状态；根路由处理登录、深链和全局弹窗。明确 Android Back、重复点 Tab 回顶、内存回收和状态恢复。不要用一个全局 Navigator 随意承载所有流程。
+14.6 设计 Flutter 插件平台
+platform interface 定义稳定契约。
+Android&#x2F;iOS&#x2F;Web&#x2F;Desktop 分包实现。
+插件能力发现、版本兼容和错误模型。
+自动化模板、Lint、宿主测试和示例验证。
+生命周期、权限、线程和多 Engine 规范。
+发布、弃用、安全审计和 owner 制度。
+
+14.7 设计移动端可观测平台统一事件模型关联 session、trace、route、version 和匿名用户标识。覆盖 Crash、ANR、性能、网络、日志和业务成功率。客户端做采样、限流、批量、压缩、离线缓存、优先级和隐私脱敏；服务端支持聚合、告警、版本对比和发布关联。
+14.8 系统设计常见扣分点
+未澄清需求就开始选 Provider&#x2F;Bloc。
+只画分层，没有数据流和故障路径。
+把所有一致性问题交给“重试”。
+没有容量、性能、监控、灰度和回滚。
+为假想需求设计大量抽象，却未解决核心链路。
+
+15. 编码与调试题15.1 实现防抖搜索并避免旧响应覆盖要求
+
+输入停止 300 ms 后发起查询。
+新输入取消旧计时器。
+过期响应不得覆盖新结果。
+组件销毁后不更新 UI。
+
+class _SearchPageState extends State&lt;SearchPage&gt; &#123;  Timer? _debounce;  int _requestVersion = 0;  List&lt;Item&gt; _items = const [];  void onQueryChanged(String query) &#123;    _debounce?.cancel();    final version = ++_requestVersion;    _debounce = Timer(const Duration(milliseconds: 300), () async &#123;      final result = await repository.search(query);      if (!mounted || version != _requestVersion) return;      setState(() =&gt; _items = result);    &#125;);  &#125;  @override  void dispose() &#123;    _debounce?.cancel();    _requestVersion++;    super.dispose();  &#125;&#125;
+
+追问
+
+Repository 支持取消时如何真正中止网络请求？
+空字符串、异常、Loading 和重试如何建模？
+如何用 fake clock 测试而不等待真实 300 ms？
+
+追问答案
+
+真正取消请求：让 Repository 接受 CancelToken 或自定义取消信号，新输入和 dispose() 都取消旧句柄，并把信号传到 HTTP 客户端。取消仍可能与完成竞态，所以请求版本校验必须保留；取消异常应静默处理，不展示成搜索失败。
+状态建模：使用 idle/loading/data/empty/error 等互斥状态，而不是多个可能冲突的布尔值。空查询立即取消并回到 idle；请求发出时进入 loading；成功按结果进入 data&#x2F;empty；错误和重试都绑定当时 query，并在提交前确认仍是当前查询。
+Fake clock 测试：纯 Dart 可用 fake_async，先推进 299 ms 断言未请求，再推进 1 ms 断言只请求一次；连续输入应只保留最后一次。Widget Test 可用 tester.pump(Duration(...))，并用可控 Completer 让新响应先于旧响应完成，验证旧结果不会覆盖。
+
+15.2 修复这段生命周期代码class _PageState extends State&lt;Page&gt; &#123;  late final StreamSubscription&lt;Data&gt; subscription;  @override  void initState() &#123;    super.initState();    subscription = widget.source.listen((data) &#123;      setState(() &#123;&#125;);    &#125;);  &#125;&#125;
+
+应发现
+
+未在 dispose 中取消订阅。
+didUpdateWidget 未处理 source 变化。
+subscription 声明为 final，无法在数据源变化时重新赋值。
+回调没有保存&#x2F;使用 data，题目可要求补齐状态。
+错误与完成语义未定义。
+
+class _PageState extends State&lt;Page&gt; &#123;  late StreamSubscription&lt;Data&gt; _subscription;  Data? _latestData;  Object? _streamError;  bool _streamDone = false;  @override  void initState() &#123;    super.initState();    _listen(widget.source);  &#125;  void _listen(Stream&lt;Data&gt; source) &#123;    _subscription = source.listen(      _onData,      onError: _onError,      onDone: _onDone,    );  &#125;  void _onData(Data data) &#123;    if (!mounted) return;    setState(() &#123;      _latestData = data;      _streamError = null;    &#125;);  &#125;  void _onError(Object error, StackTrace stackTrace) &#123;    if (!mounted) return;    setState(() =&gt; _streamError = error);  &#125;  void _onDone() &#123;    if (!mounted) return;    setState(() =&gt; _streamDone = true);  &#125;  @override  void didUpdateWidget(covariant Page oldWidget) &#123;    super.didUpdateWidget(oldWidget);    if (!identical(oldWidget.source, widget.source)) &#123;      _subscription.cancel();      _latestData = null;      _streamError = null;      _streamDone = false;      _listen(widget.source);    &#125;  &#125;  @override  void dispose() &#123;    _subscription.cancel();    super.dispose();  &#125;&#125;
+
+示例选择“展示当前数据、显示最后一次错误、记录流已结束，并在切换数据源时清空旧状态”的策略；真实项目可按业务改为保留旧数据、终止页面或允许重试。面试时也允许候选人指出 cancel() 返回 Future，但 dispose() 不能 await，并进一步讨论资源层的关闭策略。
+15.3 找出列表状态错位原因ListView(  children: users      .map((user) =&gt; UserCard(user: user))      .toList(),)
+
+当 UserCard 有内部状态且 users 重排时，状态可能按位置复用到错误用户。应使用稳定业务 ID：
+UserCard(  key: ValueKey(user.id),  user: user,)
+
+追问：如果外层还有 Padding，Key 放在哪里？删除、插入和跨父节点移动分别如何处理？
+追问答案
+
+外层包装：Key 必须放到同级比较的最外层节点；若兄弟是 Padding，就把 ValueKey(user.id) 放在 Padding 或包一层 KeyedSubtree。只给内部 UserCard Key，第一层无 Key 的 Padding 仍会按位置复用。
+删除与插入：稳定且同级唯一的 LocalKey 让未删除项的 Element&#x2F;State 跟随业务实体移动；删除项最终 dispose，新 Key 创建新 State。数组下标会随插入改变，随机 Key 又会强制全部重建，都不合适。
+跨父节点移动：LocalKey 只在同一父节点的兄弟范围匹配。GlobalKey 可支持同一帧跨父节点重挂载，但成本和耦合高；普通业务状态更适合提升到 ViewModel&#x2F;领域状态，避免依赖 Widget State 跨树保存。
+
+15.4 实现并发安全的 Token 刷新伪代码应体现 single-flight：
+Future&lt;String&gt;? _refreshing;Future&lt;String&gt; refreshOnce() &#123;  final inFlight = _refreshing;  if (inFlight != null) return inFlight;  final future = authApi.refreshToken();  _refreshing = future;  return future.whenComplete(() &#123;    if (identical(_refreshing, future)) &#123;      _refreshing = null;    &#125;  &#125;);&#125;
+
+评分重点不是语法，而是并发等待、失败清理、只重试一次、退出竞态和非幂等请求策略。
+15.5 自定义 RenderObject 题题目：在父节点提供有界宽高约束的前提下，实现一个只允许单个 child、自身占满允许空间，并把 child 放在右下角的 RenderObject。
+候选人应说明：
+
+Widget&#x2F;Element&#x2F;RenderObject 对应类型。
+performLayout 中可令 size = constraints.biggest，用 constraints.loosen() 布局 child，并把 BoxParentData.offset 设为 Offset(size.width - child.size.width, size.height - child.size.height)。
+paint 使用 offset 绘制 child。
+属性变化时选择 markNeedsLayout 或 markNeedsPaint。
+需要时处理 hit test 和语义。
+
+不要求完整背出源码，但要有正确管线意识。若去掉“有界约束”和“占满空间”的前提，自身尺寸策略并不唯一，候选人应先澄清是扩展到最大尺寸还是按 child 收缩。
+15.6 调试题：setState() called after dispose应检查 Timer、Future、Stream、Animation、Channel callback。仅添加 if (!mounted) return 能避免异常，但更优方案是取消无意义工作、让请求与页面生命周期绑定，并防止资源泄漏和副作用继续发生。
+15.7 调试题：Vertical viewport was given unbounded height候选人应从约束链解释：纵向可滚动组件位于给出无界垂直约束的父布局中。根据意图选择 Expanded、明确尺寸，或合并为一个 CustomScrollView&#x2F;Sliver；不应习惯性 shrinkWrap: true，因为它可能增加布局成本。
+15.8 编码题评分表
+
+
+项目
+权重
+
+
+
+正确性和边界
+30%
+
+
+生命周期与资源释放
+20%
+
+
+异步竞态和错误语义
+15%
+
+
+可读性与 API 设计
+15%
+
+
+可测试性
+10%
+
+
+性能与安全意识
+10%
+
+
+
+16. 领导力与行为面试16.1 推动过什么跨团队技术改进？追问
+
+问题为何值得做，谁不同意？
+如何用数据而不是职位推动？
+试点范围、迁移成本和回滚是什么？
+adoption（采用率）、故障率或交付效率改善多少？
+
+高分回答框架（经历型问题应替换为候选人的真实案例）
+
+为何值得做、谁不同意：把问题转换为故障、重复维护、交付延迟、升级阻塞或合规风险。准确复述反对方承担的迁移成本、排期和性能顾虑，而不是把不同意见描述成“不配合”。
+用数据推动：建立缺陷率、维护工时、交付周期等基线，用原型或小范围试点验证收益；同时公开迁移成本和适用边界，并与受影响团队共同约定“达到什么指标继续、什么情况停止”。
+试点、迁移与回滚：选择有代表性但爆炸半径可控的真实链路；把代码修改、测试、培训、双版本维护和发布风险都计入迁移成本。通过旧版兼容、版本锁定、远程开关或模块级恢复提供回滚。
+结果指标：adoption（采用率）应是“已迁移目标数&#x2F;符合条件总数”；故障按会话或调用量归一化；效率观察交付周期中位数和 P90；同时报告回滚、维护工单和升级耗时。比较前后必须使用相同口径，并说明观察窗口和同期干扰因素。
+
+优秀答案体现影响力、利益相关方管理和持续运营，而不只是写了一个工具。
+16.2 如何处理架构意见冲突？先统一目标和约束，区分事实、假设和偏好；用 ADR、原型、测量或小范围试点消除不确定性。可逆决策快速试验，不可逆决策提高证据门槛。决策后共同执行，并约定复审条件。
+16.3 如何培养中初级 Flutter 工程师？
+用渐进任务扩大所有权，而非只分琐碎工作。
+Code Review 解释原则和替代方案。
+Pair debugging 展示定位过程。
+建立可访问的示例、规范和故障案例。
+用交付质量、独立决策和影响范围衡量成长。
+
+16.4 如何处理技术债？把技术债转换为可观察成本：故障、研发耗时、性能损失、升级阻塞或安全风险。按风险和收益排序，与业务迭代结合偿还；对大型债务先建立隔离边界和迁移路径。避免“全部重写”或“永远以后再说”。
+16.5 讲一次失败优秀答案应说明自己的错误判断、早期信号为何被忽略、如何止损和改变机制。只把失败归因于产品、服务端或新人是风险信号。
+16.6 如何承担线上值班？明确告警分级、值班手册、升级路径、访问权限和应急开关。事故中保持单一指挥和时间线，优先恢复服务；事后做无责但有行动项的复盘。治理目标是减少重复事故，而非追责个体。
+
+17. 评分表与录用建议17.1 综合评分表（100 分）
+
+
+维度
+权重
+关键证据
+
+
+
+Dart 与异步并发
+10
+Event Loop、Stream、Isolate、竞态
+
+
+Framework 与渲染
+15
+三棵树、约束、帧管线、生命周期
+
+
+架构与状态管理
+15
+边界、数据流、副作用、演进
+
+
+性能与内存
+15
+工具、证据、分位数、回归
+
+
+稳定性与安全
+10
+监控、止损、复盘、隐私
+
+
+原生与跨平台
+10
+Channel&#x2F;FFI、插件、平台生命周期
+
+
+测试与工程化
+10
+测试策略、CI、依赖和发布
+
+
+系统设计
+10
+澄清、权衡、故障路径、演进
+
+
+领导力和沟通
+5
+推动、培养、决策、责任
+
+
+17.2 分数锚点
+85–100：强烈推荐多个领域达到治理级；能用真实指标、权衡和机制证明影响。
+75–84：推荐基础扎实，独立负责复杂模块，有至少一个明显强项。
+65–74：谨慎推荐&#x2F;看岗位匹配有交付能力，但原理、复杂度或领导力存在缺口。
+50–64：不推荐资深岗位偏 API 使用，缺少系统设计和真实治理经验。
+低于 50：不推荐核心概念错误，无法独立处理复杂项目。
+
+17.3 一票否决或重点风险
+编造项目数据或前后陈述明显矛盾。
+对用户数据、安全或发布风险缺乏基本敬畏。
+无法接受证据，与事实冲突时仍坚持个人偏好。
+把全部事故归责他人，不承担自己的决策。
+核心异步、生命周期和资源释放知识存在系统性缺陷。
+
+17.4 面试记录模板候选人：岗位/级别：项目真实性与个人职责：最强领域及证据：主要短板及证据：Dart/并发：__/10Framework/渲染：__/15架构/状态：__/15性能/内存：__/15稳定性/安全：__/10原生/跨平台：__/10测试/工程化：__/10系统设计：__/10领导力：__/5总分：__/100建议：强烈推荐 / 推荐 / 谨慎 / 不推荐级别判断：入职风险：建议后续追问：
+
+
+18. 候选人准备清单与 STAR 模板18.1 必备知识检查
+ 能解释 Widget、Element、RenderObject 及更新条件。
+ 能从约束解释常见布局异常。
+ 能说明 Event Loop、Future、Stream、Isolate。
+ 能区分 rebuild、relayout、repaint 和 raster。
+ 能说明状态所有权、作用域、依赖和副作用。
+ 能设计 Token 刷新、缓存、离线和错误模型。
+ 能解释 Channel、插件生命周期和 FFI 边界。
+ 能用 DevTools 给出一次有数据的性能案例。
+ 能讲清一次线上事故及防复发措施。
+ 能设计 Unit&#x2F;Widget&#x2F;Integration&#x2F;Golden 测试组合。
+ 能说明 CI、灰度、回滚和版本治理。
+ 能完成一个大型 App 的模块与数据流设计。
+
+18.2 每个项目至少准备的数据
+用户&#x2F;流量规模、目标平台、团队人数、项目周期。
+页面&#x2F;模块&#x2F;包数量和关键技术约束。
+启动 P50&#x2F;P90、慢帧率、崩溃率、ANR、内存峰值。
+包体积、测试数量&#x2F;覆盖、构建耗时、发布频率。
+方案前基线、方案后结果、数据采集方式。
+
+数据必须真实且可解释。无法披露绝对值时可使用脱敏后的比例和数量级。
+18.3 STAR+R 项目回答模板
+S（Situation）：业务背景、用户规模和约束。
+T（Task）：你的职责、目标和成功标准。
+A（Action）：定位证据、候选方案、决策和实施。
+R（Result）：量化结果及业务影响。
+R（Reflection）：失败、代价、防复发和下一步。
+
+推荐表达：
+项目服务于……，当时在……设备/版本上出现……我的职责是……，成功标准定义为……我先通过……建立基线，发现主要瓶颈是……比较了 A/B/C，放弃 A 是因为……，最终选择 B……灰度过程中用……作为护栏，保留……回滚方案。最终 P90 从……降至……，崩溃率从……降至……这次方案的代价是……，后来通过……避免复发。
+
+18.4 性能案例模板场景和设备：Profile/Release 与采样方法：优化前 P50/P90/P99：Timeline 中 UI/Raster 特征：根因证据：实验与被否决方案：最终改动：优化后数据：线上监控与回归门禁：
+
+18.5 故障案例模板用户影响与持续时间：发现渠道：第一止损动作：时间线与关键证据：直接根因：扩大因素：永久修复：测试/监控/流程防复发：个人反思：
+
+18.6 面试前最后检查
+不背诵绝对化结论，主动说明版本、平台和业务边界。
+每个核心结论准备一个反例或不适用场景。
+所有“优化”准备前后数据和测量方法。
+所有“主导”准备决策、协调和个人贡献证据。
+遇到未知问题先澄清和建立分析路径，不要猜 API。
+
+
+附录：面试官快速题库基础热身
+const Widget 对更新流程有什么实际影响？
+State 保存在哪里，Widget 为什么可频繁创建？
+BuildContext 为什么与树的位置有关？
+Future 与 Stream 的错误如何传播？
+什么任务值得放入 Isolate？
+
+参考答案
+
+const Widget：相同常量表达式可复用规范化实例，减少对象创建，并让更新流程更容易快速确认配置未变；但 Element 仍由 runtimeType + key 决定是否复用，Inherited 依赖变化也仍可能触发 build()。它是局部优化，不是阻止重建的开关。
+State 的位置：State 由 StatefulElement 持有，Widget 只是当前帧的不可变配置。只要新旧 Widget 的类型和 Key 可匹配，Element 与 State 就能跨多次 Widget 创建继续存在。
+Context 与位置：BuildContext 是 Element 的接口，代表树中的一个位置。向上查找 Theme、Navigator、Provider 得到什么，取决于该位置有哪些祖先，所以刚创建的新作用域不能用它上方的 Context 查询。
+异步错误传播：Future 以“成功值或错误＋StackTrace”完成，可用 await/try-catch 或 catchError 处理；未等待的错误可能成为未处理异步错误。Stream 把错误作为独立事件发送，监听者用 onError 或 await for 外的 try-catch 处理；单个错误是否终止流由生产者决定，不能默认“有错就结束”。
+Isolate 适用任务：经过 Profile 证明会阻塞 UI 的 CPU 密集工作，例如大 JSON 映射、图片处理、压缩或加密，且计算收益要高于启动和消息传输成本。普通网络等待不是理由，短小任务迁移后可能更慢。
+
+原理深挖
+setState() 后到屏幕变化经历什么？
+如何判断一次卡顿发生在 UI 还是 Raster？
+Key 如何参与 Element 复用？
+为什么 shrinkWrap: true 可能有成本？
+Platform Channel 在多 Engine 中有什么风险？
+
+参考答案
+
+setState() 链路：同步修改状态并标记对应 Element dirty；下一帧执行 build，比较新旧 Widget 并更新 Element&#x2F;RenderObject；需要时再 layout、paint、构建 scene，最后由 Engine raster 并提交 GPU。重建不等于整页重新布局或绘制。
+区分 UI&#x2F;Raster 卡顿：在 Profile 真机的 Timeline 中分别看 UI 与 Raster 帧耗时。UI 高通常检查同步 Dart 计算、build&#x2F;layout；Raster 高检查大图、阴影、模糊、裁剪、离屏层和过度绘制。用 CPU Profiler、Layer 工具及最小开关实验确认根因。
+Key 与复用：框架在同一父节点下结合位置、runtimeType 和 key 匹配新旧 Widget。稳定 LocalKey 让 Element&#x2F;State 随业务实体移动；Key 必须同级唯一，并放在实际参与兄弟比较的最外层节点。
+shrinkWrap 成本：滚动组件需要根据内容估算自身尺寸，可能测量更多子项，并在滚动范围或内容变化时重复布局，削弱懒构建优势。少量内容可用；长列表应优先给出明确约束或统一成 Sliver。
+多 Engine 风险：每个 Engine 有自己的 Messenger、Dart Isolate 和插件生命周期。插件若把 Activity、回调或 Channel 存成进程级单例，可能注册到错误 Engine、重复回调、相互覆盖或泄漏；实现必须按 Engine 实例 attach&#x2F;detach，并验证插件是否真正支持多 Engine。
+
+项目实践
+讲一次你用证据推翻最初性能假设的经历。
+讲一次数据库或缓存迁移事故。
+讲一次 Flutter SDK 大版本升级。
+如何让 20 人团队保持架构边界？
+如何证明一个公共组件平台成功？
+
+高分回答框架
+
+推翻性能假设：先说最初假设及其依据，再给 Timeline&#x2F;Profiler 或对照实验如何证伪，说明转向的新根因、最小修复、P90&#x2F;P99 前后数据和回归门禁。高分点是尊重证据，不是“第一次就猜对”。
+迁移事故：按用户影响、止损、证据、直接根因、扩大因素和防复发回答。重点说明历史 Schema 样本覆盖、事务与幂等、磁盘空间、失败回退，以及为什么测试和监控没有更早发现；不能默认用删库解决。
+SDK 大版本升级：盘点 breaking changes、插件和原生工具链，建立编译&#x2F;测试&#x2F;性能基线；先在分支和小流量业务验证，比较启动、帧率、渲染、包体积及平台链路，准备版本回退，并更新 CI、模板与团队规范。
+20 人架构治理：按 Feature 划分 owner 和公开 API，用依赖规则、package 边界和 CI 检查阻止违规；ADR 记录重要决策，模板和示例降低遵守成本。边界应可演进，例外要有期限与复审，不能只靠口头约定或负责人审批。
+组件平台成功标准：不仅看组件数量，还看目标团队 adoption、交付周期中位数&#x2F;P90、重复缺陷率、无障碍与视觉回归、升级耗时、维护工单和版本碎片。收益需与迁移、运行性能和平台维护成本一起衡量。
+
+终局判断
+如果只能改善一个工程指标，你选什么，为什么？
+你做过最有争议的技术决策是什么？
+哪个线上问题改变了你的开发方式？
+你如何判断某项抽象是必要设计还是过度设计？
+入职后三个月，你会如何评估现有 Flutter 项目？
+
+高分回答框架
+
+只改善一个指标：先根据当前最大用户风险选择，而不是固定答案。若崩溃阻断核心链路，优先 crash-free；若稳定性已达标但首屏流失严重，优先可交互时间。说明指标口径、护栏指标和为何它能带来业务结果。
+有争议的决策：交代冲突目标、反对意见、证据和可逆性；说明如何试点、设停止条件并承担结果。优秀答案既能坚持原则，也能承认后来哪些判断需要修正。
+改变开发方式的事故：用真实事故说明原先缺失的心智模型，例如只修异常却未取消资源，或只看平均值忽略长尾；重点是事故后新增了什么测试、监控、门禁或设计检查，并证明未重复发生。
+判断抽象是否必要：看是否已有多个真实变化源、稳定共同语义、明确替换&#x2F;测试边界，以及抽象是否降低总认知和迁移成本。只有一个实现、依赖假想需求或调用者需要理解大量内部细节，通常是过度设计；可先重复少量代码，等模式稳定再抽取。
+三个月评估路径：第一个月理解业务、用户和发布链路，建立构建、测试、架构和线上指标基线；第二个月沿关键链路审查数据流、性能、稳定性、原生边界和团队痛点，并完成一个小型真实改进；第三个月按影响&#x2F;成本排序路线图，与团队共同确定 owner、指标、灰度和回滚。先建立信任和证据，不应一入职就推动重写。
+
+
+最终判断不应来自某一道“标准答案”，而应来自候选人能否持续给出正确心智模型、真实证据、合理权衡和可落地的治理闭环。
+
+]]></content>
+  </entry>
+  <entry>
+    <title>Hello World</title>
+    <url>/2023/06/25/hello-world/</url>
+    <content><![CDATA[Welcome to Hexo! This is your very first post. Check documentation for more info. If you get any problems when using Hexo, you can find the answer in troubleshooting or you can ask me on GitHub.
+Quick StartCreate a new post$ hexo new &quot;My New Post&quot;
+
+More info: Writing
+Run server$ hexo server
+
+More info: Server
+Generate static files$ hexo generate
+
+More info: Generating
+Deploy to remote sites$ hexo deploy
+
+More info: Deployment
+]]></content>
+  </entry>
+  <entry>
+    <title>国密汇总</title>
+    <url>/2023/09/05/%E5%9B%BD%E5%AF%86%E6%B1%87%E6%80%BB/</url>
+    <content><![CDATA[国产密码算法包括SM1、SM2、SM3、SM4和SM7。SM1 - 对称算法
+分组长度和密钥长度均为128位.
+该算法目前尚未公开.
+该算法的安全性和软硬件实现性能与AES算法相当.
+调用加密芯片的接口进行使用.
+
+SM2 - 非对称密钥算法
+加密强度为256位
+该算法是一种基于椭圆曲线（ECC）
+
+SM3 - 消息摘要
+https://www.oscca.gov.cn/sca/xxgk/2010-12/17/content_1002389.shtml
+
+
+密码杂凑算法消息分组长度 为 512b, 摘要长度 256b
+该算法为不可逆的算法， 具体算法是保密的。
+
+执行过程 &#x3D; &gt; 消息填充、消息扩展、迭代压缩
+SM4
+一种 Feistel 结构的分组密码算法，其分组长度和密钥长度均为128bit
+
+该算法为对称加密算法，其加密强度为128位 
+SM7该算法是一种分组密码算法，分组长度为128比特，密钥长度也为128比特。
+SM7适用于非接触式IC卡，应用包括身份识别类应用(门禁卡、工作证、参赛证)，票务类应用(大型赛事门票、展会门票)，支付与通卡类应用（积分消费卡、校园一卡通、企业一卡通等
+SM9SM9 主要用于用户的身份认证。SM9 算法不需要申请数字证书，适用于互联网应用的各种新兴应用的安全保障。
+]]></content>
+  </entry>
+  <entry>
+    <title>内存泄漏/内存溢出</title>
+    <url>/2024/11/15/%E5%86%85%E5%AD%98%E6%B3%84%E6%BC%8F-%E5%86%85%E5%AD%98%E6%BA%A2%E5%87%BA/</url>
+    <content><![CDATA[一、内存泄漏 &amp; 内存溢出​	在软件开发与运行过程中，内存管理是一个至关重要的环节。然而，由于各种原因，如程序设计的缺陷或资源管理的不当，可能会导致两种常见的内存问题：内存泄漏（Memory Leak）和内存溢出（Memory Overflow）。各种语言&#x2F;操作系统上预防和解决也有不同方式方案,以下是关于两者概念的详细介绍：
+内存泄漏:​	内存泄漏指程序中已经不再需要使用的内存没有被释放，从而造成内存资源浪费和程序性能下降。其特征是程序使用内存总量持续增加，直到程序崩溃或者系统强制关闭。
+原因：
+
+资源未被正确释放：程序动态分配了内存资源，但没有及时释放，导致内存泄漏。
+垃圾回收机制失效：在使用Java等高级语言编写的程序中，垃圾回收机制负责自动释放不再使用的内存资源。但如果程序员在编写代码时存在逻辑错误，就有可能导致垃圾回收机制失效，进而导致内存泄漏。
+循环引用：在使用面向对象编程语言时，两个对象之间可能会发生相互引用的情况。如果这种引用形成了一个环路，就会导致这些对象永远无法被释放，从而产生内存泄漏。
+
+影响：
+
+系统崩溃：内存泄漏会导致系统可用内存不足，从而造成系统崩溃或者异常退出。
+程序性能下降：内存泄漏会让程序占用更多的内存，导致程序性能下降，响应速度变慢。
+安全问题：黑客可能会利用内存泄漏漏洞实现攻击，比如利用堆栈溢出漏洞进行缓冲区溢出攻击。
+
+检测与避免方法：
+
+使用内存监控工具：Windows Task Manager、Linux top命令、ValgrindAndroid Liko KOOM Leakcanary
+代码审查：通过仔细阅读代码，找出可能导致内存泄漏的逻辑错误，发现和解决问题。
+显式地释放资源：在程序中动态分配了内存后，一定要在不再需要使用这些资源时显式地释放它们。例如，在C语言中使用free函数进行内存释放。
+使用智能指针：C++等语言中提供了智能指针的概念，可以自动管理内存，避免手动释放资源时遗漏。
+避免循环引用：在使用面向对象编程时，尽量避免对象之间相互引用形成环路的情况。如果无法避免，可以使用弱引用等技术来解决。
+
+内存溢出:​	内存溢出是指程序在申请内存时，所需的内存空间超过了系统所分配的内存空间，使得程序无法正常运行.
+原因：
+
+分配的内存过于庞大，在内存池中没有足够的连续空间满足需求。
+内存泄漏：应用程序持续向系统申请内存空间，但没有及时释放，导致内存池被消耗殆尽。
+代码编写问题：如未正确释放已经申请的内存、指针操作错误等。
+操作系统本身限制了进程所能申请的最大内存。
+
+影响：
+​	内存溢出会导致程序崩溃或者无法正常运行，因为它直接涉及到程序的运行空间不足。
+解决办法：
+
+优化代码：避免出现无效的内存分配和内存泄漏。
+使用内存池技术：尽可能地重复利用已经申请的内存空间。
+增大操作系统对程序可用的最大内存限制（前提是操作系统支持）。
+将需要处理的数据划分为更小的块，分批进行处理，这样可以使每个块需要分配的内存量变小。
+
+二、关联&#x2F;区别关系:
+​	内存泄漏会造成内存溢出, 内存泄漏是指程序在申请内存后，无法释放已申请的内存空间，一次内存泄漏危害可以忽略，但内存泄漏堆积起来后果很严重，无论多少内存，迟早会被占光，最终会导致内存溢出。
+区别:
+
+发生时机：内存溢出通常发生在程序运行时，当数据结构的大小超过预设限制或者递归调用栈过深时，就会发生内存溢出。而内存泄漏则是在程序持续运行过程中逐渐累积的，当不再使用的内存没有及时释放时，就会产生泄漏。
+表现方式: 内存溢出会导致程序崩溃或者无法正常运行，因为它直接涉及到程序的运行空间不足。而内存泄漏在初期可能不会对程序产生明显影响，但随着时间的推移，未释放的内存不断累积，最终会导致系统资源耗尽，程序性能下降。
+解决方案: 对于内存溢出，解决方法通常涉及到优化数据结构和算法，减少内存消耗，或者增加系统可用内存。而解决内存泄漏则需要定位泄漏源头，修复代码中的内存管理问题，确保不再使用的内存能够被及时释放。
+
+三、Android内存泄漏场景:1. 非静态内部类&#x2F;匿名内部类造成原因：非静态内部类默认会持有外部类的引用，如果内部类的生命周期超过了外部类，就会造成内存泄漏。
+场景：当Activity销毁后，由于内部类中存在异步耗时任务还在执行，导致Activity实例一直被内部类持有无法被回收，造成内存泄漏。
+public class TestActivity extends AppCompatActivity &#123;    @Override    protected void onCreate(Bundle savedInstanceState) &#123; 		// ... ...                Button.setOnClickListener(new View.OnClickListener() &#123;            @Override            public void onClick(View view) &#123;                new Thread(new Runnable() &#123;                    @Override                    public void run() &#123;                        try &#123;                            // 模拟耗时操作                            Thread.sleep(1000);                        &#125; catch (InterruptedException e) &#123;                            throw new RuntimeException(e);                        &#125;                    &#125;                &#125;).start();            &#125;        &#125;);    &#125;&#125;
+
+解决办法：使用静态内部类，并通过弱引用的方式持有外部类。
+public class TestActivity extends AppCompatActivity &#123;    @Override    protected void onCreate(Bundle savedInstanceState) &#123;        super.onCreate(savedInstanceState);        setContentView(R.layout.activity_test);        Button button = findViewById(R.id.button);        button.setOnClickListener(new View.OnClickListener() &#123;            @Override            public void onClick(View view) &#123;                new Thread(new MyRunnable()).start();            &#125;        &#125;);    &#125;    static class MyRunnable implements Runnable &#123;        @Override        public void run() &#123;            try &#123;                // 模拟耗时操作                Thread.sleep(1000);            &#125; catch (InterruptedException e) &#123;                throw new RuntimeException(e);            &#125;        &#125;    &#125;&#125;
+
+2. 静态成员变量造成的内存泄漏造成原因：静态成员变量的生命周期等于应用程序的生命周期，如果该静态成员引用的变量生命周期小于该静态变量，就会造成内存泄漏。
+场景：静态成员变量持有了一个耗费资源过多的实例（如Activity、Fragment）。
+public class Person &#123;    private static Activity mActivity;    Person(Activity activity) &#123;        mActivity = activity;    &#125;&#125;
+
+解决办法：尽量避免使用Static成员变量引用资源耗费过多的实例，如果必须使用，可以使用Application的Context。这样可以随着应用生命周期创建销毁.
+3. 单例模式造成的内存泄漏造成原因：单例模式由于其具有静态特性，导致其生命周期等于应用程序生命周期，如果单例中持有别的类的实例，就会造成内存泄漏。
+场景：单例模式中持有一个耗费资源过多的实例（如Context）。
+public class SingleInstance &#123;    private static SingleInstance instance;    private Context mContext;    private SingleInstance(Context context) &#123;        this.mContext = context; // 传递的是Activity的context    &#125;    public static SingleInstance getInstance(Context context) &#123;        if (instance == null) &#123;            instance = new SingleInstance(context);        &#125;        return instance;    &#125;&#125;
+
+解决办法：使用Application的Context代替Activity的Context。
+4. Handler造成的内存泄漏造成原因：Handler会持有外部类的对象（如Activity），如果Handler中还有消息没执行完，此时创建Handler的Activity关闭就会造成内存泄漏。
+场景：Activity中通过一个子线程异步请求网络数据，请求成功后更新当前页面。
+public class MainActivity extends AppCompatActivity &#123;    private Handler mHandler = new Handler(Looper.getMainLooper()) &#123;        @Override        public void handleMessage(Message msg) &#123;            // 更新页面        &#125;    &#125;;    // 成功获取到网络数据后更新页面    private void handleData(String data) &#123;        Message message = Message.obtain();        message.obj = data;        mHandler.sendMessage(message);    &#125;&#125;
+
+解决办法：
+
+使用静态内部类+弱引用。
+在Activity销毁时，及时清理消息队列中的消息。
+
+public class MainActivity extends AppCompatActivity &#123;    private static class MyHandler extends Handler &#123;        private final WeakReference&lt;MainActivity&gt; mActivity;        public MyHandler(MainActivity activity) &#123;            mActivity = new WeakReference&lt;&gt;(activity);        &#125;        @Override        public void handleMessage(Message msg) &#123;            MainActivity activity = mActivity.get();            if (activity != null) &#123;                // 更新页面            &#125;        &#125;    &#125;    private MyHandler mHandler;    @Override    protected void onCreate(Bundle savedInstanceState) &#123;        super.onCreate(savedInstanceState);        setContentView(R.layout.activity_main);        mHandler = new MyHandler(this);    &#125;    @Override    protected void onDestroy() &#123;        super.onDestroy();        if (mHandler != null) &#123;            mHandler.removeCallbacksAndMessages(null);        &#125;    &#125;&#125;
+
+5. 资源性对象未关闭造成的内存泄漏造成原因：对于资源性对象（如BroadcastReceiver、EventBus等），在不再使用时，应该立即调用其close()函数将其关闭，然后再置为null。否则会造成内存泄漏。
+场景：Activity中注册了BroadcastReceiver，但在onDestroy方法中没有注销该接收器。
+public class MainActivity extends AppCompatActivity &#123;    private MyReceiver myReceiver;    @Override    protected void onCreate(Bundle savedInstanceState) &#123;        super.onCreate(savedInstanceState);        setContentView(R.layout.activity_main);        myReceiver = new MyReceiver();        registerReceiver(myReceiver, new IntentFilter(&quot;MY_ACTION&quot;));    &#125;    // 假设未重写onDestroy方法&#125;class MyReceiver extends BroadcastReceiver &#123;    @Override    public void onReceive(Context context, Intent intent) &#123;        // 处理广播    &#125;&#125;
+
+解决办法：在onDestroy方法中注销广播接收器。
+@Overrideprotected void onDestroy() &#123;    super.onDestroy();    unregisterReceiver(myReceiver); // 解除注册&#125;
+
+6. 容器中的对象未清理造成的内存泄漏造成原因：在使用集合类（如ArrayList、HashMap等）时，如果集合中的对象不再使用，但没有及时从集合中移除，就会导致这些对象无法被垃圾回收器回收，从而造成内存泄漏。
+场景：在Activity中创建了一个ArrayList来存储一些对象，但在Activity销毁时，没有清空这个ArrayList。
+解决办法：在Activity销毁时，清空集合中的对象，并将其置为null。
+@Overrideprotected void onDestroy() &#123;    super.onDestroy();    if (myList != null) &#123;        myList.clear();        myList = null;    &#125;&#125;
+
+Liko在 OOM 和内存触顶时通过用户无感知 dump 来获取 HPROF 文件，当 App 退出到后台且内存 充足的情况进行分析，裁剪 HPROF 回传进行分析
+KOOM利用系统内核COW(Copy-on-write，写时复制)机制，每次dump内存镜像前先暂停虚拟机，然后fork子进程来执行dump操作，父进程在fork成功后立刻恢复虚拟机运行，整个过程对于父进程来讲总耗时只有几毫秒。内存镜像于闲时进行独立进程单线程本地分析，分析完即删除。
+LeakCanary原理分析
+分为以下几步：
+
+监测Activity 的生命周期的 onDestroy() 的调用。
+当某个 Activity 的 onDestroy() 调用后，便对这个 activity 创建一个带 ReferenceQueue 的弱引用，并且给这个弱引用创建了一个 key 保存在 Set集合 中。
+如果这个 activity 可以被回收，那么弱引用就会被添加到 ReferenceQueue 中。
+等待主线程进入 idle(即空闲)后，通过一次遍历，在 ReferenceQueue 中的弱引用所对应的 key 将从 retainedKeys 中移除，说明其没有内存泄漏。
+如果 activity 没有被回收，先强制进行一次 gc，再来检查，如果 key 还存在 retainedKeys 中，说明 activity 不可回收，同时也说明了出现了内存泄漏。
+发生内存泄露之后，dump内存快照，分析 hprof 文件，找到泄露路径（使用 haha 库分析），发送到通知栏
+
+]]></content>
+  </entry>
+  <entry>
+    <title>并行&amp;并发 静心理解</title>
+    <url>/2024/08/23/%E5%B9%B6%E8%A1%8C-%E5%B9%B6%E5%8F%91-%E9%9D%99%E5%BF%83%E7%90%86%E8%A7%A3/</url>
+    <content><![CDATA[并行 &amp; 并发并行 ： 并行是指多个任务或者操作再同一时间点上同时执行.(前提是在支持多处理器机器及调度系统上)
+并发 ： 并发是指多个任务或操作在同一时间段内交替执行, 快速地在多个任务之间切换, 看起来像是同时进行的.
+并行 更依赖硬件TAG: 物理分离, 资源独立
+在每个核上独立执行一个任务, 更依赖硬件
+并发 更依赖系统TAG: 资源共享, 时间片, 上下文切换
+操作系统通过时间分片实现并发, 快速的在多个任务之间切换, 每个任务获得一小段CPU时间.  
+从物理层面了解并行: 多个任务在物理上同时进行, 需要多个处理器或多核处理器来实现
+并发: 多个任务在逻辑上同时进行, 实际是在单个处理器上通过快速切换来实现
+问题并行: 包括负载均衡、通信开销、数据一致性等。需要处理任务之间的同步和通信问题。此外，并行程序可能受到资源限制（如内存带宽、网络延迟等）的影响，导致性能不如预期。
+并发: 包括死锁、竞态条件、资源同步等。可以提高程序的响应性和吞吐量，但过多的上下文切换会增加系统开销，降低整体性能。
+]]></content>
+  </entry>
+  <entry>
+    <title>思考-写怎样的代码看着舒服(Java/Kotlin)</title>
+    <url>/2023/08/31/%E6%80%9D%E8%80%83-%E5%86%99%E6%80%8E%E6%A0%B7%E7%9A%84%E4%BB%A3%E7%A0%81%E7%9C%8B%E7%9D%80%E8%88%92%E6%9C%8D/</url>
+    <content><![CDATA[看整齐条理的类文件代码 真的会少几条皱纹 
+在想写怎么样的代码会舒服
+深思熟虑问过各家AI后进行整合编码约定
+目前对应代码量比较多的是Java\Kotlin, 算是阅读量和编写量最多的语言, 汇总如下
+Java Class Layout属性变量
+
+静态&#x2F;常量变量
+私有&#x2F;公共成员变量（非静态变量）构造
+构造方法方法
+单例方法（如果有）
+公共&#x2F;私有方法(非静态)
+静态方法内部类
+静态&#x2F;内部类（如果有）
+
+Kotlin Class Layout
+https://kotlinlang.org/docs/coding-conventions.html#class-layout
+
+
+Property declarations and initializer blocks属性声明和初始值设定项块
+Secondary constructors辅助构造函数
+Method declarations方法声明
+Companion object伴随对象
+
+]]></content>
+  </entry>
+</search>
