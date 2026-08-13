@@ -46,241 +46,6 @@ mainjava -jniLibs 	--arm64-v8a  		---libbrencrypt.so 	--armeabi-v7a  		---libbre
       </tags>
   </entry>
   <entry>
-    <title>Flutter Binding 机制深度解析</title>
-    <url>/2026/08/03/Flutter-Binding-%E6%9C%BA%E5%88%B6%E6%B7%B1%E5%BA%A6%E8%A7%A3%E6%9E%90/</url>
-    <content><![CDATA[
-源码路径：packages/flutter/lib/src/foundation/binding.dart
-
-一、BindingBase 核心定位BindingBase 是 Flutter 框架所有 Binding 的基类，采用 mixin 链式初始化 + 单例 模式。Flutter 框架的7个 Binding（GestureBinding、SchedulerBinding、ServicesBinding、PaintingBinding、SemanticsBinding、RendererBinding、WidgetsBinding）都通过 on BindingBase 约束，在构造时依次完成初始化。
-
-二、BindingBase 初始化流程flowchart TD    A[&quot;BindingBase 构造函数&quot;] --&gt; B[&quot;initInstances()&quot;]    B --&gt; B1[&quot;记录 _debugInitializedType = runtimeType&quot;]    B1 --&gt; B2[&quot;记录 _debugBindingZone = Zone.current&quot;]    B2 --&gt; B3[&quot;子类 override: _instance = this&quot;]    A --&gt; C[&quot;initServiceExtensions()&quot;]    C --&gt; C1[&quot;registerSignalServiceExtension: reassemble&quot;]    C1 --&gt; C2[&quot;registerSignalServiceExtension: exit&quot;]    C2 --&gt; C3[&quot;registerStringServiceExtension: connectedVmServiceUri&quot;]    C3 --&gt; C4[&quot;registerStringServiceExtension: activeDevToolsServerAddress&quot;]    C4 --&gt; C5[&quot;registerServiceExtension: platformOverride Debug&quot;]    C5 --&gt; C6[&quot;registerServiceExtension: brightnessOverride Debug&quot;]
-
-核心代码// L155: BindingBase 构造函数abstract class BindingBase &#123;  BindingBase() &#123;    initInstances();          // 链式初始化单例    initServiceExtensions();  // 注册 VM 服务扩展  &#125;&#125;// L290: initInstances — @mustCallSuper 确保子类调用父类@mustCallSupervoid initInstances() &#123;  _debugInitializedType = runtimeType;  _debugBindingZone = Zone.current;&#125;// L311: checkInstance — 静态校验单例是否已初始化static T checkInstance&lt;T&gt;(T? instance) &#123;  // 未初始化 → 抛 FlutterError  // 已初始化 → 返回 instance&#125;
-
-单例模式每个 Binding 子类在 initInstances() 中设置 _instance = this，通过 static T get instance =&gt; BindingBase.checkInstance(_instance) 访问。这确保了全局唯一的 Binding 实例。
-
-三、Mixin 链式初始化顺序flowchart BT    subgraph &quot;WidgetsFlutterBinding 初始化链（构造时从右到左）&quot;    BB[&quot;BindingBase 构造函数入口&quot;] --&gt; GB[&quot;GestureBinding&lt;br/&gt;initInstances + initServiceExtensions&quot;]    GB --&gt; SB[&quot;SchedulerBinding&lt;br/&gt;initInstances + initServiceExtensions&quot;]    SB --&gt; SVB[&quot;ServicesBinding&lt;br/&gt;initInstances + initServiceExtensions&quot;]    SVB --&gt; PB[&quot;PaintingBinding&lt;br/&gt;initInstances + initServiceExtensions&quot;]    PB --&gt; SemB[&quot;SemanticsBinding&lt;br/&gt;initInstances + initServiceExtensions&quot;]    SemB --&gt; RB[&quot;RendererBinding&lt;br/&gt;initInstances + initServiceExtensions&quot;]    RB --&gt; WB[&quot;WidgetsBinding&lt;br/&gt;initInstances + initServiceExtensions&quot;]    end
-
-
-关键：Dart mixin 的初始化顺序遵循线性化规则，BindingBase 的构造函数最先执行，然后按 mixin 声明顺序从左到右调用各 initInstances() 和 initServiceExtensions()。
-
-
-四、lockEvents 事件锁机制flowchart TD    A[&quot;lockEvents(callback)&quot;] --&gt; B[&quot;_lockCount++&quot;]    B --&gt; C[&quot;执行 callback()&quot;]    C --&gt; D[&quot;_lockCount--&quot;]    D --&gt; E&#123;&quot;locked? _lockCount &gt; 0&quot;&#125;    E --&gt;|是| F[&quot;等待其他锁释放&quot;]    E --&gt;|否| G[&quot;unlocked() 刷新事件队列&quot;]
-
-核心代码// L660: 事件锁Future&lt;void&gt; lockEvents(Future&lt;void&gt; Function() callback) &#123;  _lockCount += 1;  final future = callback();  future.whenComplete(() &#123;    _lockCount -= 1;    if (!locked) unlocked();  // 解锁时刷新队列  &#125;);  return future;&#125;
-
-用途：在 reassembleApplication（热重载）期间锁定事件分发，防止重载过程中的中间状态事件被处理。
-
-五、reassembleApplication 热重载flowchart TD    A[&quot;reassembleApplication()&quot;] --&gt; B[&quot;lockEvents(performReassemble)&quot;]    B --&gt; C[&quot;_lockCount++&quot;]    C --&gt; D[&quot;performReassemble()&quot;]    D --&gt; D1[&quot;FlutterError.resetErrorCount()&quot;]    D1 --&gt; D2[&quot;子类 override: 重注册闭包/刷新缓存&quot;]    D2 --&gt; E[&quot;_lockCount--&quot;]    E --&gt; F[&quot;unlocked() 刷新队列&quot;]
-
-
-六、registerServiceExtension 四种注册方法flowchart TD    A1[&quot;registerSignalServiceExtension&lt;br/&gt;无参数无返回值&quot;] --&gt; R[&quot;registerServiceExtension&lt;br/&gt;name → ext.flutter.$name&quot;]    A2[&quot;registerBoolServiceExtension&lt;br/&gt;enabled 参数&quot;] --&gt; R    A3[&quot;registerNumericServiceExtension&lt;br/&gt;double 参数&quot;] --&gt; R    A4[&quot;registerStringServiceExtension&lt;br/&gt;value 参数&quot;] --&gt; R    R --&gt; DEV[&quot;developer.registerExtension&lt;br/&gt;注册到 VM 服务协议&quot;]    DEV --&gt; FD[&quot;Future.delayed(Duration.zero)&lt;br/&gt;确保外层事件循环执行&quot;]    FD --&gt; RES[&quot;ServiceExtensionResponse.result&lt;br/&gt;JSON 编码返回&quot;]
-
-核心代码// L930: 最终注册方法void registerServiceExtension(&#123;  required String name,  required ServiceExtensionCallback callback,&#125;) &#123;  final methodName = &#x27;ext.flutter.$name&#x27;;  developer.registerExtension(methodName, (method, parameters) async &#123;    await Future&lt;void&gt;.delayed(Duration.zero);  // 确保外层事件循环执行    final result = await callback(parameters);    return developer.ServiceExtensionResponse.result(json.encode(result));  &#125;);&#125;
-
-Future.delayed(Duration.zero) 的意义：将回调调度到下一个微任务，确保当前事件循环中的其他事件先处理完毕，避免在服务扩展回调中阻塞当前帧。
-
-七、类关系图classDiagram    class BindingBase &#123;        &lt;&lt;abstract&gt;&gt;        +initInstances() mustCallSuper        +initServiceExtensions() mustCallSuper        +locked : bool        +lockEvents(callback)        +reassembleApplication()        +performReassemble() mustCallSuper        +registerServiceExtension()        +checkInstance(instance) static    &#125;    class GestureBinding    class SchedulerBinding    class ServicesBinding    class PaintingBinding    class SemanticsBinding    class RendererBinding    class WidgetsBinding    BindingBase &lt;|-- GestureBinding : on BindingBase    BindingBase &lt;|-- SchedulerBinding : on BindingBase    BindingBase &lt;|-- ServicesBinding : on BindingBase    BindingBase &lt;|-- PaintingBinding : on BindingBase    BindingBase &lt;|-- SemanticsBinding : on BindingBase    BindingBase &lt;|-- RendererBinding : on BindingBase    BindingBase &lt;|-- WidgetsBinding : on BindingBase    class WidgetsFlutterBinding &#123;        +ensureInitialized() static    &#125;    WidgetsFlutterBinding ..|&gt; BindingBase : with all 7 mixins
-
-
-八、关键调用链总结
-
-
-场景
-调用链
-
-
-
-应用启动
-WidgetsFlutterBinding() → BindingBase() → initInstances() × 7 → initServiceExtensions() × 7
-
-
-热重载
-reassembleApplication() → lockEvents(performReassemble) → 各子类 performReassemble()
-
-
-服务扩展调用
-VM → ext.flutter.$name → Future.delayed(Duration.zero) → callback(parameters) → JSON 响应
-
-
-事件锁
-lockEvents(cb) → _lockCount++ → cb() → _lockCount-- → unlocked()
-
-
-]]></content>
-      <categories>
-        <category>Flutter</category>
-      </categories>
-      <tags>
-        <tag>Flutter</tag>
-      </tags>
-  </entry>
-  <entry>
-    <title>Android系统进程-思维构建</title>
-    <url>/2024/08/26/Android%E7%B3%BB%E7%BB%9F%E8%BF%9B%E7%A8%8B-%E6%80%9D%E7%BB%B4%E6%9E%84%E5%BB%BA/</url>
-    <content><![CDATA[init进程概述init进程并非鼻祖进程, 真正的鼻祖是进程id为0的 swapper进程(idele进程).
-init的进程(pid&#x3D;1), 是Android用户空间所有进程的鼻祖, 还有一个兄弟进程kthread进程(pid&#x3D;2), 是Android内核空间所有进程的鼻祖.
-init会 fork&#x2F;clone 多个子进程, vold\adbd\lmkd\logd\surfaceflinger\servicemanager\zygote(systemserver(AMS&#x2F;WMS&#x2F;PMS)&#x2F;launcher&#x2F;phone&#x2F;camera)
-surfaceflinger进程作用是：把多个来源的图像数据，如需合成则进行合成 否则直接提交给display驱动进行显示
-
-lmkd进程 Low Memory Killer Daemon低内存杀手守护进程, 查杀进程的。会监控内存的使用情况，当达到一定阀值的时候，会去杀掉一些处于后台的、优先级低的、占用内存高的进程, 是一个守护进程，会在后台默默的为内存的健康保驾护航.
-
-logdlog功能
-
-servicemanager进程为binder通信服务的，负责整个Android系统的binder通信 ，所以 需要提前启动
-
-zygote进程init进程直接创建的子进程中唯一可以运行java代码的进程
-
-进程启动选用脚本语言定义创建子进程以及顺序,后缀.rc, 可定义子进程基础信息、触发条件、前置命令、创建命令，需要用init脚本语言来配置创建子进程的步骤如下1. 首先 子进程在以.rc的脚本文件中，使用service关键字来配置子进程相关的信息2. 其次 在init.rc文件中（init.rc文件到底是在哪个目录这个是不确定的）使用import关键字引入脚本文件，使用on关键字来配置子进程的触发条件，3. 触发条件配置完毕后，如若子进程在创建之前需要配置一些前置操作或命令，则基于触发条件下配置这些信息4. 最后 使用start关键字来配置创建子进程的命令。子进程的基础信息会被解析到Service实例中，所有的Service实例会存放到ServiceList对象中。触发条件和它包含的命令会被解析到Action实例中，所有的Action实例会存放到ActionManager对象中.
-
-小计子进程的善后都需要创建进程的处理,1. 首先我先使用sigaction函数来注册SIGCHLD信号，这样就可以监听到子进程的状态了2. 其次使用signalfd函数为SIGCHLD信号生成一个fd（文件描述符）3. 再次使用epoll来见监听上一步生成的fd是否有可读数据4. 如监听到fd上有可读数据，则证明子进程的状态发生了变化，还需要使用waitpid函数来获取是哪个子进程死掉了
-
-servicemanagerzygotesystemserver进程ActivityManagerServiceWindowManagerServiceInputManagerServicePackageManagerServicesurfaceflinger进程四大组件binderhandler窗口ui绘制事件分发类加载机制]]></content>
-      <categories>
-        <category>Android</category>
-      </categories>
-      <tags>
-        <tag>Android</tag>
-      </tags>
-  </entry>
-  <entry>
-    <title>Android Scrcpy Frp 远程操控/调试Android手机</title>
-    <url>/2023/06/25/Android-Scrcpy-Frp-%E8%BF%9C%E7%A8%8B%E6%93%8D%E6%8E%A7-%E8%B0%83%E8%AF%95Android%E6%89%8B%E6%9C%BA/</url>
-    <content><![CDATA[1. 安装msys2https://www.msys2.org/2. 安装环境参考文档https://blog.csdn.net/u012787710/article/details/130430216pacman -S mingw-w64-x86_64-SDL2pacman -S mingw-w64-x86_64-ffmpegpacman -S mingw-w64-x86_64-libusbpacman -S mingw-w64-x86_64-makepacman -S mingw-w64-x86_64-pkg-configpacman -S mingw-w64-x86_64-meson3.pwdgit clone https://github.com/Genymobile/scrcpy.git4.# 进入代码仓cd./ scrcpy/# 编译scrcpy-server 如果慢 跳过 下载编译好的 https://github.com/Genymobile/scrcpy/releases/tag/v2.0./server/scripts/build-wrapper.sh &quot;server&quot; &quot;server/scrcpy-server&quot; &quot;release&quot;# 我放入了 scrcpy-server	scrcpy\server\scrcpy-server# 编译Scrcpy.exemeson x --buildtype release --strip -Db_lto=true -Dprebuilt_server=./server/scrcpy-server-v2.0ninja.exe -Cx./run x---&gt;ERROR: Command not found: [adb], [start-server]---&gt;解: 放入代码仓根目录 adb.exe AdbWinApi.dll AdbWinUsbApi.dll]]></content>
-      <categories>
-        <category>Android</category>
-      </categories>
-      <tags>
-        <tag>Android</tag>
-        <tag>Debug</tag>
-      </tags>
-  </entry>
-  <entry>
-    <title>Flutter-框架初始化与帧循环深度解析</title>
-    <url>/2026/08/03/Flutter-%E6%A1%86%E6%9E%B6%E5%88%9D%E5%A7%8B%E5%8C%96%E4%B8%8E%E5%B8%A7%E5%BE%AA%E7%8E%AF%E6%B7%B1%E5%BA%A6%E8%A7%A3%E6%9E%90/</url>
-    <content><![CDATA[Flutter 框架初始化与帧循环深度解析
-源码路径：packages/flutter/lib/src/widgets/binding.dart
-
-一、WidgetsFlutterBinding — 七 Mixin 组合classDiagram    class WidgetsFlutterBinding &#123;        +ensureInitialized() WidgetsBinding static    &#125;    class BindingBase    class GestureBinding    class SchedulerBinding    class ServicesBinding    class PaintingBinding    class SemanticsBinding    class RendererBinding    class WidgetsBinding    WidgetsFlutterBinding --|&gt; BindingBase    WidgetsFlutterBinding ..|&gt; GestureBinding : with    WidgetsFlutterBinding ..|&gt; SchedulerBinding : with    WidgetsFlutterBinding ..|&gt; ServicesBinding : with    WidgetsFlutterBinding ..|&gt; PaintingBinding : with    WidgetsFlutterBinding ..|&gt; SemanticsBinding : with    WidgetsFlutterBinding ..|&gt; RendererBinding : with    WidgetsFlutterBinding ..|&gt; WidgetsBinding : with
-
-// L1819: 七 mixin 组合定义class WidgetsFlutterBinding extends BindingBase    with GestureBinding,         SchedulerBinding,         ServicesBinding,         PaintingBinding,         SemanticsBinding,         RendererBinding,         WidgetsBinding &#123;  static WidgetsBinding ensureInitialized() &#123;    if (_instance == null) WidgetsFlutterBinding();    return WidgetsBinding.instance;  &#125;&#125;
-
-
-二、runApp 启动全链路flowchart TD    A[&quot;runApp(app)&quot;] --&gt; B[&quot;WidgetsFlutterBinding.ensureInitialized()&quot;]    B --&gt; C[&quot;WidgetsFlutterBinding() 构造&quot;]    C --&gt; D[&quot;BindingBase() → initInstances × 7&quot;]    D --&gt; E[&quot;initServiceExtensions × 7&quot;]    E --&gt; F[&quot;_runWidget(binding.wrapWithDefaultView(app))&quot;]    F --&gt; G[&quot;scheduleAttachRootWidget(app)&quot;]    G --&gt; H[&quot;scheduleWarmUpFrame()&quot;]    H --&gt; I[&quot;首帧调度: handleBeginFrame → handleDrawFrame&quot;]
-
-核心代码// L1574: runApp 入口void runApp(Widget app) &#123;  final WidgetsBinding binding = WidgetsFlutterBinding.ensureInitialized();  _runWidget(binding.wrapWithDefaultView(app), binding, &#x27;runApp&#x27;);&#125;// L1639: _runWidgetvoid _runWidget(Widget app, WidgetsBinding binding, String debugMethodName) &#123;  binding.scheduleAttachRootWidget(app);  binding.scheduleWarmUpFrame();&#125;// L1840: ensureInitializedstatic WidgetsBinding ensureInitialized() &#123;  if (_instance == null) WidgetsFlutterBinding();  return WidgetsBinding.instance;&#125;
-
-
-三、WidgetsBinding.initInstances 初始化flowchart TD    A[&quot;WidgetsBinding.initInstances()&quot;] --&gt; B[&quot;super.initInstances()&quot;]    B --&gt; C[&quot;_instance = this&quot;]    C --&gt; D[&quot;buildOwner = BuildOwner()&quot;]    D --&gt; E[&quot;buildOwner.onBuildScheduled = _handleBuildScheduled&quot;]    E --&gt; F[&quot;注册栈帧过滤器&lt;br/&gt;ComponentElement/StatefulElement/...&quot;]    F --&gt; G[&quot;addPersistentFrameCallback(_drawFrame)&quot;]    G --&gt; H[&quot;initServiceExtensions()&quot;]
-
-核心代码// L537+: WidgetsBinding.initInstances@overridevoid initInstances() &#123;  super.initInstances();  _instance = this;  buildOwner = BuildOwner();  buildOwner!.onBuildScheduled = _handleBuildScheduled;  // 注册栈帧过滤器...  addPersistentFrameCallback(_drawFrame);  // 每帧回调&#125;// L1121: 构建调度void _handleBuildScheduled() &#123;  ensureVisualUpdate();  // 请求下一帧&#125;
-
-
-四、RootWidget.attach — 根挂载flowchart TD    A[&quot;RootWidget.attach(owner, element)&quot;] --&gt; B&#123;&quot;element == null?&lt;br/&gt;首次挂载?&quot;&#125;    B --&gt;|是| C[&quot;element = createElement() → RootElement&quot;]    C --&gt; D[&quot;owner.lockState(assignOwner)&quot;]    D --&gt; E[&quot;owner.buildScope(mount)&quot;]    B --&gt;|否| F[&quot;element.markNeedsBuild()&quot;]    F --&gt; G[&quot;下一帧 rebuild&quot;]
-
-核心代码// L1696: RootWidget.attachvoid attach(BuildOwner owner, Element? element) &#123;  if (element == null) &#123;    owner.lockState(() &#123;      final Element newElement = createElement();      newElement.assignOwner(owner);      owner.buildScope(newElement, () &#123;        newElement.mount(null, null);      &#125;);    &#125;);  &#125; else &#123;    element.markNeedsBuild();  &#125;&#125;
-
-
-五、RootElement 挂载与重建flowchart TD    A[&quot;RootElement.mount()&quot;] --&gt; B[&quot;super.mount()&quot;]    B --&gt; C[&quot;_rebuild()&quot;]    C --&gt; D[&quot;updateChild(null, widget.child, null)&quot;]    D --&gt; E[&quot;inflateWidget → createElement → mount&quot;]    F[&quot;RootElement.performRebuild()&quot;] --&gt; G&#123;&quot;_newWidget != null?&quot;&#125;    G --&gt;|有延迟更新| H[&quot;_child = updateChild(_child, _newWidget, ...)&quot;]    G --&gt;|无| I[&quot;_rebuild()&quot;]    H --&gt; J[&quot;_newWidget = null&quot;]
-
-
-六、drawFrame — 帧循环核心drawFrame 是每帧执行的核心回调，通过 addPersistentFrameCallback 注册到 SchedulerBinding。
-flowchart TD    A[&quot;drawFrame()&quot;] --&gt; B[&quot;buildOwner!.buildScope(rootElement!)&quot;]    B --&gt; C[&quot;构建 dirty Elements&quot;]    C --&gt; D[&quot;super.drawFrame()&quot;]    D --&gt; D1[&quot;RendererBinding.drawFrame()&quot;]    D1 --&gt; D2[&quot;pipelineOwner.flushLayout()&quot;]    D2 --&gt; D3[&quot;pipelineOwner.flushCompositingBits()&quot;]    D3 --&gt; D4[&quot;pipelineOwner.flushPaint()&quot;]    D4 --&gt; D5[&quot;pipelineOwner.flushSemantics()&quot;]    D5 --&gt; D6[&quot;renderView.compositeFrame()&quot;]    D6 --&gt; E[&quot;buildOwner!.finalizeTree()&quot;]    E --&gt; F[&quot;unmount 不可恢复的 inactive Elements&quot;]
-
-核心代码// L1227: WidgetsBinding.drawFrame@overridevoid drawFrame() &#123;  // ... 省略调试逻辑  try &#123;    if (renderViewElement != null) &#123;      buildOwner!.buildScope(renderViewElement!);  // 1. 构建    &#125;    super.drawFrame();  // 2. 布局+绘制+合成    // super.drawFrame() 调用链:    //   RendererBinding.drawFrame()    //     → pipelineOwner.flushLayout()    //     → pipelineOwner.flushCompositingBits()    //     → pipelineOwner.flushPaint()    //     → renderView.compositeFrame()  &#125; finally &#123;    buildOwner!.finalizeTree();  // 3. 清理  &#125;&#125;
-
-
-七、帧调度机制 — SchedulerBindingflowchart TD    A[&quot;Vsync 信号&quot;] --&gt; B[&quot;handleBeginFrame(rawTimeStamp)&quot;]    B --&gt; C[&quot;处理 transientCallbacks (_transientCallbacks)&quot;]    C --&gt; D[&quot;handleDrawFrame()&quot;]    D --&gt; E[&quot;处理 persistentCallbacks (_persistentCallbacks)&quot;]    E --&gt; F[&quot;drawFrame() — 帧循环核心&quot;]    F --&gt; G[&quot;处理 postFrameCallbacks (_postFrameCallbacks)&quot;]
-
-帧回调类型
-
-
-回调类型
-注册方法
-用途
-
-
-
-transientCallback
-addTransientFrameCallback
-一次性动画回调，帧后自动移除
-
-
-persistentCallback
-addPersistentFrameCallback
-持久回调，每帧执行（如 drawFrame）
-
-
-postFrameCallback
-addPostFrameCallback
-帧后回调，执行一次后自动移除
-
-
-
-八、scheduleAttachRootWidget — 异步根挂载flowchart TD    A[&quot;scheduleAttachRootWidget(rootWidget)&quot;] --&gt; B&#123;&quot;_rootElement != null?&quot;&#125;    B --&gt;|是| C[&quot;_rootElement.widget.child = rootWidget&lt;br/&gt;markNeedsBuild()&quot;]    B --&gt;|否| D[&quot;attachRootWidget(rootWidget)&quot;]    D --&gt; E[&quot;attachToBuildOwner(RootWidget(child: rootWidget))&quot;]    E --&gt; F[&quot;RootWidget.attach(owner, null)&quot;]    F --&gt; G[&quot;createElement() → RootElement&quot;]    G --&gt; H[&quot;assignOwner → buildScope(mount)&quot;]
-
-
-九、WidgetsBindingObserver 观察者接口classDiagram    class WidgetsBindingObserver &#123;        &lt;&lt;interface&gt;&gt;        +didPopRoute() bool        +didPushRoute(route) bool        +didPushRouteInformation(info) bool        +didChangeAppLifecycleState(state)        +didChangeMetrics()        +didChangeTextScaleFactor()        +didChangePlatformBrightness()        +didChangeLocales()        +didChangeAccessibilityFeatures()        +handleStartBackGesture() bool        +handleUpdateBackGesture(progress) bool        +handleCommitBackGesture() bool    &#125;
-
-注册&#x2F;注销观察者：
-// 注册WidgetsBinding.instance.addObserver(observer);// 注销WidgetsBinding.instance.removeObserver(observer);
-
-
-十、从 runApp 到首帧渲染完整流程flowchart TD    A[&quot;runApp(MyApp)&quot;] --&gt; B[&quot;WidgetsFlutterBinding.ensureInitialized()&quot;]    B --&gt; C[&quot;BindingBase 构造&quot;]    C --&gt; D[&quot;7个 Binding 的 initInstances&quot;]    D --&gt; E[&quot;7个 Binding 的 initServiceExtensions&quot;]    E --&gt; F[&quot;scheduleAttachRootWidget(wrapWithDefaultView(MyApp))&quot;]    F --&gt; G[&quot;scheduleWarmUpFrame()&quot;]    G --&gt; H[&quot;handleBeginFrame()&quot;]    H --&gt; I[&quot;handleDrawFrame()&quot;]    I --&gt; J[&quot;drawFrame()&quot;]    J --&gt; K[&quot;buildScope → RootElement.mount → _rebuild&quot;]    K --&gt; L[&quot;Widget Tree 构建 → Element Tree 构建&quot;]    L --&gt; M[&quot;RenderObjectElement.mount → createRenderObject&quot;]    M --&gt; N[&quot;flushLayout → flushCompositingBits → flushPaint&quot;]    N --&gt; O[&quot;首帧渲染完成&quot;]
-
-
-十一、关键调用链总结
-
-
-场景
-调用链
-
-
-
-应用启动
-runApp() → ensureInitialized() → initInstances() × 7 → scheduleAttachRootWidget() → scheduleWarmUpFrame()
-
-
-根挂载
-attachRootWidget() → RootWidget.attach() → createElement() → buildScope(mount)
-
-
-每帧循环
-Vsync → handleBeginFrame() → handleDrawFrame() → drawFrame() → buildScope + flushLayout + flushPaint
-
-
-构建调度
-setState() → markNeedsBuild() → onBuildScheduled() → ensureVisualUpdate() → 请求 Vsync
-
-
-帧三阶段
-1.buildScope构建 → 2.super.drawFrame()布局+绘制+合成 → 3.finalizeTree清理
-
-
-]]></content>
-      <categories>
-        <category>Flutter</category>
-      </categories>
-      <tags>
-        <tag>Flutter</tag>
-      </tags>
-  </entry>
-  <entry>
-    <title>Flutter 记录</title>
-    <url>/2023/06/25/Flutter-%E8%AE%B0%E5%BD%95/</url>
-    <content><![CDATA[check 环境
-flutter doctor
-
-同意 Android 协议
-flutter doctor --android-licenses]]></content>
-      <categories>
-        <category>Flutter</category>
-      </categories>
-      <tags>
-        <tag>Flutter</tag>
-      </tags>
-  </entry>
-  <entry>
     <title>Flutter-Widget/Element/RenderObject-三树关系深度解析</title>
     <url>/2026/08/03/Flutter-Widget-Element-RenderObject-%E4%B8%89%E6%A0%91%E5%85%B3%E7%B3%BB%E6%B7%B1%E5%BA%A6%E8%A7%A3%E6%9E%90/</url>
     <content><![CDATA[Flutter Widget&#x2F;Element&#x2F;RenderObject 三树关系深度解析
@@ -370,128 +135,6 @@ inflateWidget() → globalKeyRegistry 查找 → 旧 Element deactivate → acti
       <tags>
         <tag>Flutter</tag>
       </tags>
-  </entry>
-  <entry>
-    <title>内存泄漏/内存溢出</title>
-    <url>/2024/11/15/%E5%86%85%E5%AD%98%E6%B3%84%E6%BC%8F-%E5%86%85%E5%AD%98%E6%BA%A2%E5%87%BA/</url>
-    <content><![CDATA[一、内存泄漏 &amp; 内存溢出​	在软件开发与运行过程中，内存管理是一个至关重要的环节。然而，由于各种原因，如程序设计的缺陷或资源管理的不当，可能会导致两种常见的内存问题：内存泄漏（Memory Leak）和内存溢出（Memory Overflow）。各种语言&#x2F;操作系统上预防和解决也有不同方式方案,以下是关于两者概念的详细介绍：
-内存泄漏:​	内存泄漏指程序中已经不再需要使用的内存没有被释放，从而造成内存资源浪费和程序性能下降。其特征是程序使用内存总量持续增加，直到程序崩溃或者系统强制关闭。
-原因：
-
-资源未被正确释放：程序动态分配了内存资源，但没有及时释放，导致内存泄漏。
-垃圾回收机制失效：在使用Java等高级语言编写的程序中，垃圾回收机制负责自动释放不再使用的内存资源。但如果程序员在编写代码时存在逻辑错误，就有可能导致垃圾回收机制失效，进而导致内存泄漏。
-循环引用：在使用面向对象编程语言时，两个对象之间可能会发生相互引用的情况。如果这种引用形成了一个环路，就会导致这些对象永远无法被释放，从而产生内存泄漏。
-
-影响：
-
-系统崩溃：内存泄漏会导致系统可用内存不足，从而造成系统崩溃或者异常退出。
-程序性能下降：内存泄漏会让程序占用更多的内存，导致程序性能下降，响应速度变慢。
-安全问题：黑客可能会利用内存泄漏漏洞实现攻击，比如利用堆栈溢出漏洞进行缓冲区溢出攻击。
-
-检测与避免方法：
-
-使用内存监控工具：Windows Task Manager、Linux top命令、ValgrindAndroid Liko KOOM Leakcanary
-代码审查：通过仔细阅读代码，找出可能导致内存泄漏的逻辑错误，发现和解决问题。
-显式地释放资源：在程序中动态分配了内存后，一定要在不再需要使用这些资源时显式地释放它们。例如，在C语言中使用free函数进行内存释放。
-使用智能指针：C++等语言中提供了智能指针的概念，可以自动管理内存，避免手动释放资源时遗漏。
-避免循环引用：在使用面向对象编程时，尽量避免对象之间相互引用形成环路的情况。如果无法避免，可以使用弱引用等技术来解决。
-
-内存溢出:​	内存溢出是指程序在申请内存时，所需的内存空间超过了系统所分配的内存空间，使得程序无法正常运行.
-原因：
-
-分配的内存过于庞大，在内存池中没有足够的连续空间满足需求。
-内存泄漏：应用程序持续向系统申请内存空间，但没有及时释放，导致内存池被消耗殆尽。
-代码编写问题：如未正确释放已经申请的内存、指针操作错误等。
-操作系统本身限制了进程所能申请的最大内存。
-
-影响：
-​	内存溢出会导致程序崩溃或者无法正常运行，因为它直接涉及到程序的运行空间不足。
-解决办法：
-
-优化代码：避免出现无效的内存分配和内存泄漏。
-使用内存池技术：尽可能地重复利用已经申请的内存空间。
-增大操作系统对程序可用的最大内存限制（前提是操作系统支持）。
-将需要处理的数据划分为更小的块，分批进行处理，这样可以使每个块需要分配的内存量变小。
-
-二、关联&#x2F;区别关系:
-​	内存泄漏会造成内存溢出, 内存泄漏是指程序在申请内存后，无法释放已申请的内存空间，一次内存泄漏危害可以忽略，但内存泄漏堆积起来后果很严重，无论多少内存，迟早会被占光，最终会导致内存溢出。
-区别:
-
-发生时机：内存溢出通常发生在程序运行时，当数据结构的大小超过预设限制或者递归调用栈过深时，就会发生内存溢出。而内存泄漏则是在程序持续运行过程中逐渐累积的，当不再使用的内存没有及时释放时，就会产生泄漏。
-表现方式: 内存溢出会导致程序崩溃或者无法正常运行，因为它直接涉及到程序的运行空间不足。而内存泄漏在初期可能不会对程序产生明显影响，但随着时间的推移，未释放的内存不断累积，最终会导致系统资源耗尽，程序性能下降。
-解决方案: 对于内存溢出，解决方法通常涉及到优化数据结构和算法，减少内存消耗，或者增加系统可用内存。而解决内存泄漏则需要定位泄漏源头，修复代码中的内存管理问题，确保不再使用的内存能够被及时释放。
-
-三、Android内存泄漏场景:1. 非静态内部类&#x2F;匿名内部类造成原因：非静态内部类默认会持有外部类的引用，如果内部类的生命周期超过了外部类，就会造成内存泄漏。
-场景：当Activity销毁后，由于内部类中存在异步耗时任务还在执行，导致Activity实例一直被内部类持有无法被回收，造成内存泄漏。
-public class TestActivity extends AppCompatActivity &#123;    @Override    protected void onCreate(Bundle savedInstanceState) &#123; 		// ... ...                Button.setOnClickListener(new View.OnClickListener() &#123;            @Override            public void onClick(View view) &#123;                new Thread(new Runnable() &#123;                    @Override                    public void run() &#123;                        try &#123;                            // 模拟耗时操作                            Thread.sleep(1000);                        &#125; catch (InterruptedException e) &#123;                            throw new RuntimeException(e);                        &#125;                    &#125;                &#125;).start();            &#125;        &#125;);    &#125;&#125;
-
-解决办法：使用静态内部类，并通过弱引用的方式持有外部类。
-public class TestActivity extends AppCompatActivity &#123;    @Override    protected void onCreate(Bundle savedInstanceState) &#123;        super.onCreate(savedInstanceState);        setContentView(R.layout.activity_test);        Button button = findViewById(R.id.button);        button.setOnClickListener(new View.OnClickListener() &#123;            @Override            public void onClick(View view) &#123;                new Thread(new MyRunnable()).start();            &#125;        &#125;);    &#125;    static class MyRunnable implements Runnable &#123;        @Override        public void run() &#123;            try &#123;                // 模拟耗时操作                Thread.sleep(1000);            &#125; catch (InterruptedException e) &#123;                throw new RuntimeException(e);            &#125;        &#125;    &#125;&#125;
-
-2. 静态成员变量造成的内存泄漏造成原因：静态成员变量的生命周期等于应用程序的生命周期，如果该静态成员引用的变量生命周期小于该静态变量，就会造成内存泄漏。
-场景：静态成员变量持有了一个耗费资源过多的实例（如Activity、Fragment）。
-public class Person &#123;    private static Activity mActivity;    Person(Activity activity) &#123;        mActivity = activity;    &#125;&#125;
-
-解决办法：尽量避免使用Static成员变量引用资源耗费过多的实例，如果必须使用，可以使用Application的Context。这样可以随着应用生命周期创建销毁.
-3. 单例模式造成的内存泄漏造成原因：单例模式由于其具有静态特性，导致其生命周期等于应用程序生命周期，如果单例中持有别的类的实例，就会造成内存泄漏。
-场景：单例模式中持有一个耗费资源过多的实例（如Context）。
-public class SingleInstance &#123;    private static SingleInstance instance;    private Context mContext;    private SingleInstance(Context context) &#123;        this.mContext = context; // 传递的是Activity的context    &#125;    public static SingleInstance getInstance(Context context) &#123;        if (instance == null) &#123;            instance = new SingleInstance(context);        &#125;        return instance;    &#125;&#125;
-
-解决办法：使用Application的Context代替Activity的Context。
-4. Handler造成的内存泄漏造成原因：Handler会持有外部类的对象（如Activity），如果Handler中还有消息没执行完，此时创建Handler的Activity关闭就会造成内存泄漏。
-场景：Activity中通过一个子线程异步请求网络数据，请求成功后更新当前页面。
-public class MainActivity extends AppCompatActivity &#123;    private Handler mHandler = new Handler(Looper.getMainLooper()) &#123;        @Override        public void handleMessage(Message msg) &#123;            // 更新页面        &#125;    &#125;;    // 成功获取到网络数据后更新页面    private void handleData(String data) &#123;        Message message = Message.obtain();        message.obj = data;        mHandler.sendMessage(message);    &#125;&#125;
-
-解决办法：
-
-使用静态内部类+弱引用。
-在Activity销毁时，及时清理消息队列中的消息。
-
-public class MainActivity extends AppCompatActivity &#123;    private static class MyHandler extends Handler &#123;        private final WeakReference&lt;MainActivity&gt; mActivity;        public MyHandler(MainActivity activity) &#123;            mActivity = new WeakReference&lt;&gt;(activity);        &#125;        @Override        public void handleMessage(Message msg) &#123;            MainActivity activity = mActivity.get();            if (activity != null) &#123;                // 更新页面            &#125;        &#125;    &#125;    private MyHandler mHandler;    @Override    protected void onCreate(Bundle savedInstanceState) &#123;        super.onCreate(savedInstanceState);        setContentView(R.layout.activity_main);        mHandler = new MyHandler(this);    &#125;    @Override    protected void onDestroy() &#123;        super.onDestroy();        if (mHandler != null) &#123;            mHandler.removeCallbacksAndMessages(null);        &#125;    &#125;&#125;
-
-5. 资源性对象未关闭造成的内存泄漏造成原因：对于资源性对象（如BroadcastReceiver、EventBus等），在不再使用时，应该立即调用其close()函数将其关闭，然后再置为null。否则会造成内存泄漏。
-场景：Activity中注册了BroadcastReceiver，但在onDestroy方法中没有注销该接收器。
-public class MainActivity extends AppCompatActivity &#123;    private MyReceiver myReceiver;    @Override    protected void onCreate(Bundle savedInstanceState) &#123;        super.onCreate(savedInstanceState);        setContentView(R.layout.activity_main);        myReceiver = new MyReceiver();        registerReceiver(myReceiver, new IntentFilter(&quot;MY_ACTION&quot;));    &#125;    // 假设未重写onDestroy方法&#125;class MyReceiver extends BroadcastReceiver &#123;    @Override    public void onReceive(Context context, Intent intent) &#123;        // 处理广播    &#125;&#125;
-
-解决办法：在onDestroy方法中注销广播接收器。
-@Overrideprotected void onDestroy() &#123;    super.onDestroy();    unregisterReceiver(myReceiver); // 解除注册&#125;
-
-6. 容器中的对象未清理造成的内存泄漏造成原因：在使用集合类（如ArrayList、HashMap等）时，如果集合中的对象不再使用，但没有及时从集合中移除，就会导致这些对象无法被垃圾回收器回收，从而造成内存泄漏。
-场景：在Activity中创建了一个ArrayList来存储一些对象，但在Activity销毁时，没有清空这个ArrayList。
-解决办法：在Activity销毁时，清空集合中的对象，并将其置为null。
-@Overrideprotected void onDestroy() &#123;    super.onDestroy();    if (myList != null) &#123;        myList.clear();        myList = null;    &#125;&#125;
-
-Liko在 OOM 和内存触顶时通过用户无感知 dump 来获取 HPROF 文件，当 App 退出到后台且内存 充足的情况进行分析，裁剪 HPROF 回传进行分析
-KOOM利用系统内核COW(Copy-on-write，写时复制)机制，每次dump内存镜像前先暂停虚拟机，然后fork子进程来执行dump操作，父进程在fork成功后立刻恢复虚拟机运行，整个过程对于父进程来讲总耗时只有几毫秒。内存镜像于闲时进行独立进程单线程本地分析，分析完即删除。
-LeakCanary原理分析
-分为以下几步：
-
-监测Activity 的生命周期的 onDestroy() 的调用。
-当某个 Activity 的 onDestroy() 调用后，便对这个 activity 创建一个带 ReferenceQueue 的弱引用，并且给这个弱引用创建了一个 key 保存在 Set集合 中。
-如果这个 activity 可以被回收，那么弱引用就会被添加到 ReferenceQueue 中。
-等待主线程进入 idle(即空闲)后，通过一次遍历，在 ReferenceQueue 中的弱引用所对应的 key 将从 retainedKeys 中移除，说明其没有内存泄漏。
-如果 activity 没有被回收，先强制进行一次 gc，再来检查，如果 key 还存在 retainedKeys 中，说明 activity 不可回收，同时也说明了出现了内存泄漏。
-发生内存泄露之后，dump内存快照，分析 hprof 文件，找到泄露路径（使用 haha 库分析），发送到通知栏
-
-]]></content>
-  </entry>
-  <entry>
-    <title>Hello World</title>
-    <url>/2023/06/25/hello-world/</url>
-    <content><![CDATA[Welcome to Hexo! This is your very first post. Check documentation for more info. If you get any problems when using Hexo, you can find the answer in troubleshooting or you can ask me on GitHub.
-Quick StartCreate a new post$ hexo new &quot;My New Post&quot;
-
-More info: Writing
-Run server$ hexo server
-
-More info: Server
-Generate static files$ hexo generate
-
-More info: Generating
-Deploy to remote sites$ hexo deploy
-
-More info: Deployment
-]]></content>
   </entry>
   <entry>
     <title>Flutter 开发工程师面试指南</title>
@@ -1713,18 +1356,684 @@ SDK 大版本升级：盘点 breaking changes、插件和原生工具链，建�
       </tags>
   </entry>
   <entry>
-    <title>并行&amp;并发 静心理解</title>
-    <url>/2024/08/23/%E5%B9%B6%E8%A1%8C-%E5%B9%B6%E5%8F%91-%E9%9D%99%E5%BF%83%E7%90%86%E8%A7%A3/</url>
-    <content><![CDATA[并行 &amp; 并发并行 ： 并行是指多个任务或者操作再同一时间点上同时执行.(前提是在支持多处理器机器及调度系统上)
-并发 ： 并发是指多个任务或操作在同一时间段内交替执行, 快速地在多个任务之间切换, 看起来像是同时进行的.
-并行 更依赖硬件TAG: 物理分离, 资源独立
-在每个核上独立执行一个任务, 更依赖硬件
-并发 更依赖系统TAG: 资源共享, 时间片, 上下文切换
-操作系统通过时间分片实现并发, 快速的在多个任务之间切换, 每个任务获得一小段CPU时间.  
-从物理层面了解并行: 多个任务在物理上同时进行, 需要多个处理器或多核处理器来实现
-并发: 多个任务在逻辑上同时进行, 实际是在单个处理器上通过快速切换来实现
-问题并行: 包括负载均衡、通信开销、数据一致性等。需要处理任务之间的同步和通信问题。此外，并行程序可能受到资源限制（如内存带宽、网络延迟等）的影响，导致性能不如预期。
-并发: 包括死锁、竞态条件、资源同步等。可以提高程序的响应性和吞吐量，但过多的上下文切换会增加系统开销，降低整体性能。
+    <title>Flutter Binding 机制深度解析</title>
+    <url>/2026/08/03/Flutter-Binding-%E6%9C%BA%E5%88%B6%E6%B7%B1%E5%BA%A6%E8%A7%A3%E6%9E%90/</url>
+    <content><![CDATA[
+源码路径：packages/flutter/lib/src/foundation/binding.dart
+
+一、BindingBase 核心定位BindingBase 是 Flutter 框架所有 Binding 的基类，采用 mixin 链式初始化 + 单例 模式。Flutter 框架的7个 Binding（GestureBinding、SchedulerBinding、ServicesBinding、PaintingBinding、SemanticsBinding、RendererBinding、WidgetsBinding）都通过 on BindingBase 约束，在构造时依次完成初始化。
+
+二、BindingBase 初始化流程flowchart TD    A[&quot;BindingBase 构造函数&quot;] --&gt; B[&quot;initInstances()&quot;]    B --&gt; B1[&quot;记录 _debugInitializedType = runtimeType&quot;]    B1 --&gt; B2[&quot;记录 _debugBindingZone = Zone.current&quot;]    B2 --&gt; B3[&quot;子类 override: _instance = this&quot;]    A --&gt; C[&quot;initServiceExtensions()&quot;]    C --&gt; C1[&quot;registerSignalServiceExtension: reassemble&quot;]    C1 --&gt; C2[&quot;registerSignalServiceExtension: exit&quot;]    C2 --&gt; C3[&quot;registerStringServiceExtension: connectedVmServiceUri&quot;]    C3 --&gt; C4[&quot;registerStringServiceExtension: activeDevToolsServerAddress&quot;]    C4 --&gt; C5[&quot;registerServiceExtension: platformOverride Debug&quot;]    C5 --&gt; C6[&quot;registerServiceExtension: brightnessOverride Debug&quot;]
+
+核心代码// L155: BindingBase 构造函数abstract class BindingBase &#123;  BindingBase() &#123;    initInstances();          // 链式初始化单例    initServiceExtensions();  // 注册 VM 服务扩展  &#125;&#125;// L290: initInstances — @mustCallSuper 确保子类调用父类@mustCallSupervoid initInstances() &#123;  _debugInitializedType = runtimeType;  _debugBindingZone = Zone.current;&#125;// L311: checkInstance — 静态校验单例是否已初始化static T checkInstance&lt;T&gt;(T? instance) &#123;  // 未初始化 → 抛 FlutterError  // 已初始化 → 返回 instance&#125;
+
+单例模式每个 Binding 子类在 initInstances() 中设置 _instance = this，通过 static T get instance =&gt; BindingBase.checkInstance(_instance) 访问。这确保了全局唯一的 Binding 实例。
+
+三、Mixin 链式初始化顺序flowchart BT    subgraph &quot;WidgetsFlutterBinding 初始化链（构造时从右到左）&quot;    BB[&quot;BindingBase 构造函数入口&quot;] --&gt; GB[&quot;GestureBinding&lt;br/&gt;initInstances + initServiceExtensions&quot;]    GB --&gt; SB[&quot;SchedulerBinding&lt;br/&gt;initInstances + initServiceExtensions&quot;]    SB --&gt; SVB[&quot;ServicesBinding&lt;br/&gt;initInstances + initServiceExtensions&quot;]    SVB --&gt; PB[&quot;PaintingBinding&lt;br/&gt;initInstances + initServiceExtensions&quot;]    PB --&gt; SemB[&quot;SemanticsBinding&lt;br/&gt;initInstances + initServiceExtensions&quot;]    SemB --&gt; RB[&quot;RendererBinding&lt;br/&gt;initInstances + initServiceExtensions&quot;]    RB --&gt; WB[&quot;WidgetsBinding&lt;br/&gt;initInstances + initServiceExtensions&quot;]    end
+
+
+关键：Dart mixin 的初始化顺序遵循线性化规则，BindingBase 的构造函数最先执行，然后按 mixin 声明顺序从左到右调用各 initInstances() 和 initServiceExtensions()。
+
+
+四、lockEvents 事件锁机制flowchart TD    A[&quot;lockEvents(callback)&quot;] --&gt; B[&quot;_lockCount++&quot;]    B --&gt; C[&quot;执行 callback()&quot;]    C --&gt; D[&quot;_lockCount--&quot;]    D --&gt; E&#123;&quot;locked? _lockCount &gt; 0&quot;&#125;    E --&gt;|是| F[&quot;等待其他锁释放&quot;]    E --&gt;|否| G[&quot;unlocked() 刷新事件队列&quot;]
+
+核心代码// L660: 事件锁Future&lt;void&gt; lockEvents(Future&lt;void&gt; Function() callback) &#123;  _lockCount += 1;  final future = callback();  future.whenComplete(() &#123;    _lockCount -= 1;    if (!locked) unlocked();  // 解锁时刷新队列  &#125;);  return future;&#125;
+
+用途：在 reassembleApplication（热重载）期间锁定事件分发，防止重载过程中的中间状态事件被处理。
+
+五、reassembleApplication 热重载flowchart TD    A[&quot;reassembleApplication()&quot;] --&gt; B[&quot;lockEvents(performReassemble)&quot;]    B --&gt; C[&quot;_lockCount++&quot;]    C --&gt; D[&quot;performReassemble()&quot;]    D --&gt; D1[&quot;FlutterError.resetErrorCount()&quot;]    D1 --&gt; D2[&quot;子类 override: 重注册闭包/刷新缓存&quot;]    D2 --&gt; E[&quot;_lockCount--&quot;]    E --&gt; F[&quot;unlocked() 刷新队列&quot;]
+
+
+六、registerServiceExtension 四种注册方法flowchart TD    A1[&quot;registerSignalServiceExtension&lt;br/&gt;无参数无返回值&quot;] --&gt; R[&quot;registerServiceExtension&lt;br/&gt;name → ext.flutter.$name&quot;]    A2[&quot;registerBoolServiceExtension&lt;br/&gt;enabled 参数&quot;] --&gt; R    A3[&quot;registerNumericServiceExtension&lt;br/&gt;double 参数&quot;] --&gt; R    A4[&quot;registerStringServiceExtension&lt;br/&gt;value 参数&quot;] --&gt; R    R --&gt; DEV[&quot;developer.registerExtension&lt;br/&gt;注册到 VM 服务协议&quot;]    DEV --&gt; FD[&quot;Future.delayed(Duration.zero)&lt;br/&gt;确保外层事件循环执行&quot;]    FD --&gt; RES[&quot;ServiceExtensionResponse.result&lt;br/&gt;JSON 编码返回&quot;]
+
+核心代码// L930: 最终注册方法void registerServiceExtension(&#123;  required String name,  required ServiceExtensionCallback callback,&#125;) &#123;  final methodName = &#x27;ext.flutter.$name&#x27;;  developer.registerExtension(methodName, (method, parameters) async &#123;    await Future&lt;void&gt;.delayed(Duration.zero);  // 确保外层事件循环执行    final result = await callback(parameters);    return developer.ServiceExtensionResponse.result(json.encode(result));  &#125;);&#125;
+
+Future.delayed(Duration.zero) 的意义：将回调调度到下一个微任务，确保当前事件循环中的其他事件先处理完毕，避免在服务扩展回调中阻塞当前帧。
+
+七、类关系图classDiagram    class BindingBase &#123;        &lt;&lt;abstract&gt;&gt;        +initInstances() mustCallSuper        +initServiceExtensions() mustCallSuper        +locked : bool        +lockEvents(callback)        +reassembleApplication()        +performReassemble() mustCallSuper        +registerServiceExtension()        +checkInstance(instance) static    &#125;    class GestureBinding    class SchedulerBinding    class ServicesBinding    class PaintingBinding    class SemanticsBinding    class RendererBinding    class WidgetsBinding    BindingBase &lt;|-- GestureBinding : on BindingBase    BindingBase &lt;|-- SchedulerBinding : on BindingBase    BindingBase &lt;|-- ServicesBinding : on BindingBase    BindingBase &lt;|-- PaintingBinding : on BindingBase    BindingBase &lt;|-- SemanticsBinding : on BindingBase    BindingBase &lt;|-- RendererBinding : on BindingBase    BindingBase &lt;|-- WidgetsBinding : on BindingBase    class WidgetsFlutterBinding &#123;        +ensureInitialized() static    &#125;    WidgetsFlutterBinding ..|&gt; BindingBase : with all 7 mixins
+
+
+八、关键调用链总结
+
+
+场景
+调用链
+
+
+
+应用启动
+WidgetsFlutterBinding() → BindingBase() → initInstances() × 7 → initServiceExtensions() × 7
+
+
+热重载
+reassembleApplication() → lockEvents(performReassemble) → 各子类 performReassemble()
+
+
+服务扩展调用
+VM → ext.flutter.$name → Future.delayed(Duration.zero) → callback(parameters) → JSON 响应
+
+
+事件锁
+lockEvents(cb) → _lockCount++ → cb() → _lockCount-- → unlocked()
+
+
+]]></content>
+      <categories>
+        <category>Flutter</category>
+      </categories>
+      <tags>
+        <tag>Flutter</tag>
+      </tags>
+  </entry>
+  <entry>
+    <title>Kotlin Exception Handling</title>
+    <url>/2023/08/08/Kotlin-Exception-Handling/</url>
+    <content><![CDATA[1. 普通处理异常
+这种是普通的写法，明了的处理异常Kotlin也支持多个catch捕获
+
+try &#123;    throw Throwable(&quot;Diy Exception&quot;)&#125;catch (e: Exception) &#123;    print(&quot;Exception-&gt; $&#123;e.message&#125;&quot;)&#125;finally &#123;    print(&quot;finally&quot;)&#125;
+
+2. inline模式处理异常
+封装处理不会导致程序异常终止, 易于使用, 提供代码质量和开发效率吐槽一点 kotlin 不支持异常检查很不好, 需要人去识别可能出现的各种异常, 在对接各类功能接口很容易被忽略异常
+
+fun main() &#123;    var p = Person()    p.name = null    nameCatch(action = &#123;        val n: String = p.name ?: fail(&quot;name is null&quot;)    &#125;, exceptionFinally = &#123;        print(&quot;exceptionFinally&quot;)    &#125;)    print(&quot;================&quot;)    print(5)    print(&quot;================&quot;)&#125;inline fun nameCatch(action: () -&gt; Unit, exceptionFinally: () -&gt; Unit) &#123;    try &#123;        action()    &#125; catch (e: Exception) &#123;        print(&quot;inline try catch -&gt; $&#123;e.message&#125;&quot;)    &#125; finally &#123;        exceptionFinally()    &#125;&#125;]]></content>
+      <categories>
+        <category>Kotlin</category>
+      </categories>
+      <tags>
+        <tag>Kotlin</tag>
+      </tags>
+  </entry>
+  <entry>
+    <title>Flutter-框架初始化与帧循环深度解析</title>
+    <url>/2026/08/03/Flutter-%E6%A1%86%E6%9E%B6%E5%88%9D%E5%A7%8B%E5%8C%96%E4%B8%8E%E5%B8%A7%E5%BE%AA%E7%8E%AF%E6%B7%B1%E5%BA%A6%E8%A7%A3%E6%9E%90/</url>
+    <content><![CDATA[Flutter 框架初始化与帧循环深度解析
+源码路径：packages/flutter/lib/src/widgets/binding.dart
+
+一、WidgetsFlutterBinding — 七 Mixin 组合classDiagram    class WidgetsFlutterBinding &#123;        +ensureInitialized() WidgetsBinding static    &#125;    class BindingBase    class GestureBinding    class SchedulerBinding    class ServicesBinding    class PaintingBinding    class SemanticsBinding    class RendererBinding    class WidgetsBinding    WidgetsFlutterBinding --|&gt; BindingBase    WidgetsFlutterBinding ..|&gt; GestureBinding : with    WidgetsFlutterBinding ..|&gt; SchedulerBinding : with    WidgetsFlutterBinding ..|&gt; ServicesBinding : with    WidgetsFlutterBinding ..|&gt; PaintingBinding : with    WidgetsFlutterBinding ..|&gt; SemanticsBinding : with    WidgetsFlutterBinding ..|&gt; RendererBinding : with    WidgetsFlutterBinding ..|&gt; WidgetsBinding : with
+
+// L1819: 七 mixin 组合定义class WidgetsFlutterBinding extends BindingBase    with GestureBinding,         SchedulerBinding,         ServicesBinding,         PaintingBinding,         SemanticsBinding,         RendererBinding,         WidgetsBinding &#123;  static WidgetsBinding ensureInitialized() &#123;    if (_instance == null) WidgetsFlutterBinding();    return WidgetsBinding.instance;  &#125;&#125;
+
+
+二、runApp 启动全链路flowchart TD    A[&quot;runApp(app)&quot;] --&gt; B[&quot;WidgetsFlutterBinding.ensureInitialized()&quot;]    B --&gt; C[&quot;WidgetsFlutterBinding() 构造&quot;]    C --&gt; D[&quot;BindingBase() → initInstances × 7&quot;]    D --&gt; E[&quot;initServiceExtensions × 7&quot;]    E --&gt; F[&quot;_runWidget(binding.wrapWithDefaultView(app))&quot;]    F --&gt; G[&quot;scheduleAttachRootWidget(app)&quot;]    G --&gt; H[&quot;scheduleWarmUpFrame()&quot;]    H --&gt; I[&quot;首帧调度: handleBeginFrame → handleDrawFrame&quot;]
+
+核心代码// L1574: runApp 入口void runApp(Widget app) &#123;  final WidgetsBinding binding = WidgetsFlutterBinding.ensureInitialized();  _runWidget(binding.wrapWithDefaultView(app), binding, &#x27;runApp&#x27;);&#125;// L1639: _runWidgetvoid _runWidget(Widget app, WidgetsBinding binding, String debugMethodName) &#123;  binding.scheduleAttachRootWidget(app);  binding.scheduleWarmUpFrame();&#125;// L1840: ensureInitializedstatic WidgetsBinding ensureInitialized() &#123;  if (_instance == null) WidgetsFlutterBinding();  return WidgetsBinding.instance;&#125;
+
+
+三、WidgetsBinding.initInstances 初始化flowchart TD    A[&quot;WidgetsBinding.initInstances()&quot;] --&gt; B[&quot;super.initInstances()&quot;]    B --&gt; C[&quot;_instance = this&quot;]    C --&gt; D[&quot;buildOwner = BuildOwner()&quot;]    D --&gt; E[&quot;buildOwner.onBuildScheduled = _handleBuildScheduled&quot;]    E --&gt; F[&quot;注册栈帧过滤器&lt;br/&gt;ComponentElement/StatefulElement/...&quot;]    F --&gt; G[&quot;addPersistentFrameCallback(_drawFrame)&quot;]    G --&gt; H[&quot;initServiceExtensions()&quot;]
+
+核心代码// L537+: WidgetsBinding.initInstances@overridevoid initInstances() &#123;  super.initInstances();  _instance = this;  buildOwner = BuildOwner();  buildOwner!.onBuildScheduled = _handleBuildScheduled;  // 注册栈帧过滤器...  addPersistentFrameCallback(_drawFrame);  // 每帧回调&#125;// L1121: 构建调度void _handleBuildScheduled() &#123;  ensureVisualUpdate();  // 请求下一帧&#125;
+
+
+四、RootWidget.attach — 根挂载flowchart TD    A[&quot;RootWidget.attach(owner, element)&quot;] --&gt; B&#123;&quot;element == null?&lt;br/&gt;首次挂载?&quot;&#125;    B --&gt;|是| C[&quot;element = createElement() → RootElement&quot;]    C --&gt; D[&quot;owner.lockState(assignOwner)&quot;]    D --&gt; E[&quot;owner.buildScope(mount)&quot;]    B --&gt;|否| F[&quot;element.markNeedsBuild()&quot;]    F --&gt; G[&quot;下一帧 rebuild&quot;]
+
+核心代码// L1696: RootWidget.attachvoid attach(BuildOwner owner, Element? element) &#123;  if (element == null) &#123;    owner.lockState(() &#123;      final Element newElement = createElement();      newElement.assignOwner(owner);      owner.buildScope(newElement, () &#123;        newElement.mount(null, null);      &#125;);    &#125;);  &#125; else &#123;    element.markNeedsBuild();  &#125;&#125;
+
+
+五、RootElement 挂载与重建flowchart TD    A[&quot;RootElement.mount()&quot;] --&gt; B[&quot;super.mount()&quot;]    B --&gt; C[&quot;_rebuild()&quot;]    C --&gt; D[&quot;updateChild(null, widget.child, null)&quot;]    D --&gt; E[&quot;inflateWidget → createElement → mount&quot;]    F[&quot;RootElement.performRebuild()&quot;] --&gt; G&#123;&quot;_newWidget != null?&quot;&#125;    G --&gt;|有延迟更新| H[&quot;_child = updateChild(_child, _newWidget, ...)&quot;]    G --&gt;|无| I[&quot;_rebuild()&quot;]    H --&gt; J[&quot;_newWidget = null&quot;]
+
+
+六、drawFrame — 帧循环核心drawFrame 是每帧执行的核心回调，通过 addPersistentFrameCallback 注册到 SchedulerBinding。
+flowchart TD    A[&quot;drawFrame()&quot;] --&gt; B[&quot;buildOwner!.buildScope(rootElement!)&quot;]    B --&gt; C[&quot;构建 dirty Elements&quot;]    C --&gt; D[&quot;super.drawFrame()&quot;]    D --&gt; D1[&quot;RendererBinding.drawFrame()&quot;]    D1 --&gt; D2[&quot;pipelineOwner.flushLayout()&quot;]    D2 --&gt; D3[&quot;pipelineOwner.flushCompositingBits()&quot;]    D3 --&gt; D4[&quot;pipelineOwner.flushPaint()&quot;]    D4 --&gt; D5[&quot;pipelineOwner.flushSemantics()&quot;]    D5 --&gt; D6[&quot;renderView.compositeFrame()&quot;]    D6 --&gt; E[&quot;buildOwner!.finalizeTree()&quot;]    E --&gt; F[&quot;unmount 不可恢复的 inactive Elements&quot;]
+
+核心代码// L1227: WidgetsBinding.drawFrame@overridevoid drawFrame() &#123;  // ... 省略调试逻辑  try &#123;    if (renderViewElement != null) &#123;      buildOwner!.buildScope(renderViewElement!);  // 1. 构建    &#125;    super.drawFrame();  // 2. 布局+绘制+合成    // super.drawFrame() 调用链:    //   RendererBinding.drawFrame()    //     → pipelineOwner.flushLayout()    //     → pipelineOwner.flushCompositingBits()    //     → pipelineOwner.flushPaint()    //     → renderView.compositeFrame()  &#125; finally &#123;    buildOwner!.finalizeTree();  // 3. 清理  &#125;&#125;
+
+
+七、帧调度机制 — SchedulerBindingflowchart TD    A[&quot;Vsync 信号&quot;] --&gt; B[&quot;handleBeginFrame(rawTimeStamp)&quot;]    B --&gt; C[&quot;处理 transientCallbacks (_transientCallbacks)&quot;]    C --&gt; D[&quot;handleDrawFrame()&quot;]    D --&gt; E[&quot;处理 persistentCallbacks (_persistentCallbacks)&quot;]    E --&gt; F[&quot;drawFrame() — 帧循环核心&quot;]    F --&gt; G[&quot;处理 postFrameCallbacks (_postFrameCallbacks)&quot;]
+
+帧回调类型
+
+
+回调类型
+注册方法
+用途
+
+
+
+transientCallback
+addTransientFrameCallback
+一次性动画回调，帧后自动移除
+
+
+persistentCallback
+addPersistentFrameCallback
+持久回调，每帧执行（如 drawFrame）
+
+
+postFrameCallback
+addPostFrameCallback
+帧后回调，执行一次后自动移除
+
+
+
+八、scheduleAttachRootWidget — 异步根挂载flowchart TD    A[&quot;scheduleAttachRootWidget(rootWidget)&quot;] --&gt; B&#123;&quot;_rootElement != null?&quot;&#125;    B --&gt;|是| C[&quot;_rootElement.widget.child = rootWidget&lt;br/&gt;markNeedsBuild()&quot;]    B --&gt;|否| D[&quot;attachRootWidget(rootWidget)&quot;]    D --&gt; E[&quot;attachToBuildOwner(RootWidget(child: rootWidget))&quot;]    E --&gt; F[&quot;RootWidget.attach(owner, null)&quot;]    F --&gt; G[&quot;createElement() → RootElement&quot;]    G --&gt; H[&quot;assignOwner → buildScope(mount)&quot;]
+
+
+九、WidgetsBindingObserver 观察者接口classDiagram    class WidgetsBindingObserver &#123;        &lt;&lt;interface&gt;&gt;        +didPopRoute() bool        +didPushRoute(route) bool        +didPushRouteInformation(info) bool        +didChangeAppLifecycleState(state)        +didChangeMetrics()        +didChangeTextScaleFactor()        +didChangePlatformBrightness()        +didChangeLocales()        +didChangeAccessibilityFeatures()        +handleStartBackGesture() bool        +handleUpdateBackGesture(progress) bool        +handleCommitBackGesture() bool    &#125;
+
+注册&#x2F;注销观察者：
+// 注册WidgetsBinding.instance.addObserver(observer);// 注销WidgetsBinding.instance.removeObserver(observer);
+
+
+十、从 runApp 到首帧渲染完整流程flowchart TD    A[&quot;runApp(MyApp)&quot;] --&gt; B[&quot;WidgetsFlutterBinding.ensureInitialized()&quot;]    B --&gt; C[&quot;BindingBase 构造&quot;]    C --&gt; D[&quot;7个 Binding 的 initInstances&quot;]    D --&gt; E[&quot;7个 Binding 的 initServiceExtensions&quot;]    E --&gt; F[&quot;scheduleAttachRootWidget(wrapWithDefaultView(MyApp))&quot;]    F --&gt; G[&quot;scheduleWarmUpFrame()&quot;]    G --&gt; H[&quot;handleBeginFrame()&quot;]    H --&gt; I[&quot;handleDrawFrame()&quot;]    I --&gt; J[&quot;drawFrame()&quot;]    J --&gt; K[&quot;buildScope → RootElement.mount → _rebuild&quot;]    K --&gt; L[&quot;Widget Tree 构建 → Element Tree 构建&quot;]    L --&gt; M[&quot;RenderObjectElement.mount → createRenderObject&quot;]    M --&gt; N[&quot;flushLayout → flushCompositingBits → flushPaint&quot;]    N --&gt; O[&quot;首帧渲染完成&quot;]
+
+
+十一、关键调用链总结
+
+
+场景
+调用链
+
+
+
+应用启动
+runApp() → ensureInitialized() → initInstances() × 7 → scheduleAttachRootWidget() → scheduleWarmUpFrame()
+
+
+根挂载
+attachRootWidget() → RootWidget.attach() → createElement() → buildScope(mount)
+
+
+每帧循环
+Vsync → handleBeginFrame() → handleDrawFrame() → drawFrame() → buildScope + flushLayout + flushPaint
+
+
+构建调度
+setState() → markNeedsBuild() → onBuildScheduled() → ensureVisualUpdate() → 请求 Vsync
+
+
+帧三阶段
+1.buildScope构建 → 2.super.drawFrame()布局+绘制+合成 → 3.finalizeTree清理
+
+
+]]></content>
+      <categories>
+        <category>Flutter</category>
+      </categories>
+      <tags>
+        <tag>Flutter</tag>
+      </tags>
+  </entry>
+  <entry>
+    <title>Flutter 202608面试总结</title>
+    <url>/2026/08/13/Flutter-202608%E9%9D%A2%E8%AF%95%E6%80%BB%E7%BB%93/</url>
+    <content><![CDATA[Flutter 202609面试总结
+根据202608左右的纯Flutter岗位的面试记录和总结
+
+一、核心结论
+Widget 是不可变配置；Element 是树中的持久实例；RenderObject 负责 layout、paint、hit test、semantics。
+rebuild、layout、paint、raster 是不同阶段，前者发生不代表后者必然发生。
+setState() 同步修改 State，并将对应 Element 标记为 dirty；Widget 不会被标脏。
+布局口诀：约束向下传递，尺寸向上传递，父节点决定位置。
+Element 复用条件：新旧 Widget 的 runtimeType 与 key 都相同。
+mounted 只能保证 State&#x2F;Context 尚未卸载，不能解决请求乱序或导航栈变化。
+不要在 build() 中创建 Future 或 Stream，否则 rebuild 可能重复启动异步任务。
+Isolate 默认不共享可变内存；普通网络等待是异步 I&#x2F;O，通常不需要 Isolate。
+RepaintBoundary 是重绘边界，不等于一定离屏绘制或一定缓存。
+ListView.builder 的核心是懒构建，不是缓存全部 item。
+Get.put 立即创建；Get.lazyPut 首次查找时创建；Get.create 每次查找都新建。
+debounce 是停止变化后执行；interval 是持续变化时每个时间窗口最多执行一次。
+final 是只能赋值一次；const 是编译期常量并具有深层不可变性。
+implements 不复用实现；mixin 通过 with 横向复用实现。
+
+
+二、Event Loop 与 Microtask执行同步代码或一个 Event→ 清空 Microtask Queue→ 处理下一个 Event
+
+“每个 Event 前先清空 Microtask Queue”在结果上基本正确；更严谨地说，当前同步任务或 Event 结束后形成 microtask checkpoint，Microtask 清空后才进入下一个 Event。
+如果 Microtask 持续产生新的 Microtask，Timer、I&#x2F;O 回调等 Event 可能长期无法执行。
+
+三、三棵树与更新流程Widget、Element、RenderObject
+Widget：轻量、不可变的 UI 配置。
+Element：树中的持久实例；实现 BuildContext；管理父子关系、State 生命周期和 rebuild。
+RenderObject：负责布局、绘制指令、命中测试和语义，不负责光栅化。
+
+
+Widget 是不可变配置；Element 负责关联 Widget、State 和 RenderObject，并协调更新；RenderObject 负责 layout、paint、hit test 和 semantics。光栅化由 Engine 的 Raster Thread 完成。
+
+setState 链路setState 同步执行回调→ State 改变→ Element.markNeedsBuild()→ 下一帧 build→ 必要时 layout→ 必要时 paint→ 必要时 raster
+
+build() 是构建阶段，不是绘制阶段。在其中随意 setState() 可能违反构建约束或导致重复构建。
+Element 复用oldWidget.runtimeType == newWidget.runtimeType &amp;&amp;oldWidget.key == newWidget.key
+
+位置是父 Element 协调子节点时的匹配基础，但不是 Widget.canUpdate 的直接判断项。
+
+四、布局约束父节点向下传递 BoxConstraints→ 子节点在约束内计算尺寸并向上返回→ 父节点根据尺寸决定子节点位置
+
+Column + ListViewColumn 沿主轴布局非 Flex 子节点时通常给出无界高度；ListView 作为滚动视口需要有限高度来确定可视区域，因此无法完成布局。
+不是“父组件满足不了子组件”，而是：
+
+父组件没有提供子组件完成布局所需的有限约束。
+
+Column(  children: [    const Header(),    Expanded(child: ListView(...)),  ],)
+
+shrinkWrap: true 可按内容计算高度，但长列表成本较高。
+
+五、Key、const 与 RepaintBoundaryKey
+ValueKey：按值的 == 比较，常用业务 ID。
+ObjectKey：按对象身份 identical 比较。
+UniqueKey：每个实例不同；每次 build 新建会阻止复用。
+GlobalKey：全局唯一，可访问 State&#x2F;Context，也可跨父节点移动同一子树。
+
+列表无 Key 时默认按位置和类型匹配。插入、删除、换序可能使旧 State 对应到错误数据，造成输入框、勾选、动画、播放状态错位。
+GlobalKey 会增加耦合、全局注册和子树移动成本。父子通信优先回调或 Controller，跨层状态优先状态管理。
+const相同参数的 const 构造会被规范化为同一实例。父组件 rebuild 时：
+identical(oldWidget, newWidget) == true
+
+框架可跳过对子 Element 的更新。但 const 子组件仍可能因自身 setState() 或 InheritedWidget 变化而 rebuild；父级约束或绘制环境变化时也仍可能 layout、paint。
+RepaintBoundary它创建绘制边界和独立 Layer，使 markNeedsPaint() 的脏标记传播到最近边界为止。适合高频变化区域与复杂静态区域相邻的场景。
+它不保证离屏渲染或 Raster Cache。过多使用会增加 Layer、内存、显存和合成成本。
+
+const 减少 Widget&#x2F;Element 更新；RepaintBoundary 隔离 paint。
+
+
+六、InheritedWidget 与生命周期InheritedWidgetcontext.dependOnInheritedWidgetOfExactType&lt;MyInheritedWidget&gt;()
+
+该调用找到最近的 InheritedElement，并将当前 Element 注册为 dependent。updateShouldNotify(oldWidget) 只判断是否通知依赖者，不负责建立依赖。
+返回 true 后，仅通知已注册的 dependent，触发 didChangeDependencies() 并标记 rebuild。
+StatefulWidget 生命周期首次：createState → initState → didChangeDependencies → build更新：didUpdateWidget → build依赖变化：didChangeDependencies → build移除：deactivate → 可能重新插入，或 dispose
+
+
+initState()：每个 State 一次，不能声明为 async。
+didChangeDependencies()：首次也会执行。
+didUpdateWidget()：Element 复用但 Widget 配置变化时执行。
+deactivate()：暂时离树，不代表销毁。
+dispose()：释放 Controller、FocusNode、Stream、Observer 等资源。
+
+
+七、异步、mounted 与 BuildContextBuildContext 本质上是 Element 暴露的接口，表示 Widget 在 Element Tree 中的位置。
+final result = await request();if (!context.mounted) return;
+
+mounted 只保证 Element 尚未卸载，不能保证：
+
+返回的是最新请求；
+当前路由仍在顶部；
+页面参数或业务状态未变化。
+
+请求乱序：
+A 先请求，B 后请求B 先返回并显示新数据A 后返回并覆盖 B
+
+处理方式：请求序号、取消旧请求、返回时校验参数。
+异步后 pop 还要检查路由：
+if (!context.mounted) return;if (ModalRoute.of(context)?.isCurrent != true) return;Navigator.of(context).pop();
+
+
+八、FutureBuilder 与 StreamBuilder不要在 build() 中创建 Future，因为 rebuild 会产生新 Future 并可能重复请求。
+late Future&lt;Data&gt; future;@overridevoid initState() &#123;  super.initState();  future = fetchData();&#125;
+
+FutureBuilder 切换 Future 不会取消旧 Future 的底层网络任务。
+
+Future：一次完成结果。
+Stream：多个 data、error、done 事件。
+
+StreamBuilder 内部管理订阅：Widget 移除时取消；Stream 实例变化时取消旧订阅并订阅新实例。取消订阅能否停止数据源取决于 Stream 实现。
+不要在 build() 中创建 Stream，否则可能反复取消、重新订阅或重启底层任务。
+
+九、Isolate每个 Isolate 有独立 Heap、Event Loop、Microtask Queue 和全局状态。Isolate 不等于固定的一条系统线程，Runtime 会负责调度。
+Isolate 默认不共享可变内存，通过 SendPort、ReceivePort 传递消息；大块二进制可使用 TransferableTypedData。
+适合 CPU 密集任务：大型 JSON 解析、图片处理、加密、压缩、大量计算。
+不要用“超过 100ms”作为固定标准。60Hz 一帧约 16.67ms，应结合 Profile 数据和创建、消息传递成本判断。
+普通网络等待是异步 I&#x2F;O，不需要 Isolate；响应后的大型解析可能需要。
+
+十、帧渲染与性能排查一帧流程VSync→ animation callbacks→ build→ layout→ paint→ compositing→ Layer Tree→ Raster Thread 光栅化→ GPU/系统显示
+
+每帧不会重新挂载整棵 Element Tree，只处理 dirty 节点。
+卡顿分类UI 卡顿常见原因：
+
+大范围或高频 rebuild；
+昂贵 layout；
+Dart 同步计算、JSON 解析；
+动画或事件回调耗时。
+
+Raster 卡顿常见原因：
+
+大图、模糊、阴影、复杂路径；
+saveLayer、离屏渲染；
+Shader 编译；
+过度绘制。
+
+Opacity、裁剪不是必然昂贵，要看是否产生额外 Layer 或离屏渲染。
+DevTools
+Performance Timeline：区分 UI 与 Raster 阶段耗时。
+Performance Overlay：实时显示 UI、Raster 两条耗时图。
+Track Widget Builds：记录 Widget build，定位频繁或耗时构建。
+Repaint Rainbow：用颜色显示重绘区域，不用于检查 Widget 销毁。
+
+
+十一、长列表ListView.builder 按需构建可视区域及 cacheExtent 附近的 item，远离屏幕的 item 通常会被回收。
+
+itemExtent：指定固定高度，减少测量和位置计算。
+prototypeItem：用原型测量统一高度。
+cacheExtent：预构建视口前后一定距离；过大会增加内存和构建成本。
+
+状态保留：
+
+业务状态，如输入内容、播放位置：优先保存到数据源。
+短期保留 State：AutomaticKeepAliveClientMixin。
+
+大量视频播放器不宜全部保活。应在离屏时暂停、释放播放器并保存播放位置，重新进入时恢复。
+
+十二、GetXGetBuilder 与 Obx
+GetBuilder：调用 update() 手动通知，适合低频或批量刷新。
+Obx：构建时自动收集其中读取的 Rx 依赖，Rx 变化后自动 rebuild。
+.obs：把普通值转换为 Rx，不是 .obx。
+update([id])：只刷新对应 id 分组；不传 id 通常通知相关 GetBuilder。
+
+大范围 Obx 会使任意依赖变化重建整个包裹区域，应缩小监听范围。
+Controller 注册
+Get.put：立即创建并注册，后续通常复用。
+Get.lazyPut：注册工厂，首次 Get.find 时创建，之后复用。
+Get.create：每次 Get.find 都创建新实例。
+permanent: true：阻止自动释放，适合应用级服务。
+fenix: true：实例释放后保留工厂，下次 Get.find 时重新创建。
+
+BindingsBindings.dependencies() 与 Flutter 的 didChangeDependencies() 无关。
+进入路由→ 执行 Binding.dependencies()→ 注册 Controller→ 创建页面
+
+不要在 build() 中 Get.put()：构造表达式可能反复执行，且实例所有权、生命周期、释放时机不明确。
+Bindings 的价值：集中依赖、支持懒加载、关联路由生命周期、便于 Mock 和测试。
+Controller 生命周期
+onInit()：初始化数据、Worker 和订阅。
+onReady()：onInit 后下一帧，适合导航、弹窗等页面就绪操作。
+onClose()：Controller 删除前释放 Worker、Timer、Stream 等。
+
+页面关闭不一定触发 onClose()，取决于注册方式、SmartManagement、permanent 等配置。
+Worker
+ever：每次 Rx 变化都执行。
+once：第一次变化时执行一次。
+debounce：停止变化一段时间后执行，适合搜索框。
+interval：持续变化时每个时间窗口最多执行一次，适合滚动上报、防连点。
+
+debounce：等你停下来再执行interval：你不停也会按时间窗口执行
+
+内存泄漏泄漏不是“持续写数据”，而是对象已不需要却仍被引用，无法被 GC。
+常见原因：
+
+permanent 滥用；
+Worker、Timer、StreamSubscription 未释放；
+Controller、FocusNode 等未释放；
+静态变量、单例或闭包长期持有页面对象；
+tag 错误导致重复注册。
+
+排查方法：DevTools Memory 的 Heap Snapshot、Diff、Retaining Path，并确认 onClose() 是否执行。
+
+十三、Dart 语言空安全
+T?：允许为 null。
+!：空值断言，不是保证不为空；值为 null 时运行期报错。
+late：延迟初始化的非空变量，不一定是懒加载。
+required：命名参数必须显式传入，不代表值非空，如 required String? name。
+
+风险：
+
+滥用 !：把编译期问题推迟成运行期异常。
+未初始化就读取 late：LateInitializationError。
+late final 重复赋值：运行期报错。
+
+泛型协变若 Cat extends Animal，Dart 的泛型协变允许：
+List&lt;Cat&gt; cats = [Cat()];List&lt;Animal&gt; animals = cats;
+
+但实际对象仍是 List&lt;Cat&gt;。执行：
+animals.add(Dog());
+
+编译期按 List&lt;Animal&gt; 看似允许，运行期发现实际列表要求 Cat，因此抛出类型错误。
+final 与 const
+final：变量只能赋值一次，值可在运行时确定。
+const：编译期常量，对象深层不可变并可被规范化。
+
+final list = [1];list.add(2);       // 可以，引用没变// list = [3];     // 不可以，不能重新赋值const values = [1];// values.add(2);  // 运行时报错
+
+extends、implements、mixin
+extends：单继承，可复用父类字段和方法实现，适合明确的 is-a 关系。
+implements：只采用接口契约，不复用实现；需实现全部实例成员，包括方法、getter、setter。
+mixin：通过 with 横向复用实现，一个类可混入多个 Mixin；可用 on 限制适用父类型。
+
+class Bird extends Animal with Flyable, Loggable &#123;&#125;
+
+extension
+extension：不修改原类，为已有类型补充便捷方法，无需 with。
+mixin：将字段和方法实现混入类，成为实例能力的一部分。
+扩展方法采用静态分派，根据表达式的编译期类型选择扩展。
+原类存在同名实例方法时，实例方法优先。
+扩展方法不进入原类虚方法表，因此不能真正重写实例方法。
+接收者为 dynamic 时，不会通过静态扩展查找扩展方法。
+
+
+十四、第 33 题预习：静态分派与动态分派静态分派编译期根据表达式的静态类型确定目标，例如 Dart 扩展方法。
+动态分派运行期根据对象的实际类型选择被重写的方法：
+Animal animal = Cat();animal.speak(); // 调用 Cat.speak()
+
+变量静态类型是 Animal，实际对象是 Cat。实例方法进入虚方法分派，运行时会调用 Cat 的重写实现，这就是多态。
+字段访问通常不具有相同的动态多态语义；Dart 的实例变量会隐式产生 getter&#x2F;setter。面试回答时应区分：
+
+方法重写：运行时动态分派。
+同名字段声明：不是传统意义上的字段重写，避免依赖“字段多态”。
+若要多态获取属性，应显式定义并重写 getter。
+
+
+十五、CHECK ME LIST
+三棵树：Widget 配置、Element 持久实例、RenderObject 布局绘制。
+更新：setState → Element dirty → build → 按需 layout/paint/raster。
+布局：Constraints down，Sizes up，Parents set positions。
+Key：类型和 key 相同才能复用；列表换序用稳定业务 Key。
+异步：mounted 只防卸载，不防请求乱序和路由变化。
+Builder：Future&#x2F;Stream 在生命周期中创建，不在 build 中创建。
+Isolate：CPU 密集才考虑；网络等待本身不需要。
+性能：先用 Profile&#x2F;Timeline 区分 UI 卡顿与 Raster 卡顿。
+GetX：GetBuilder 手动，Obx 响应式；put 立即、lazyPut 首次、create 每次。
+Dart：! 是断言；late 是延迟初始化；final 单次赋值；const 编译期深层不可变。
+泛型：List&lt;Cat&gt; 可协变成 List&lt;Animal&gt;，错误写入在运行期检查。
+继承：extends 复用父类，implements 只要契约，mixin 横向复用。
+
+]]></content>
+      <categories>
+        <category>Flutter</category>
+      </categories>
+      <tags>
+        <tag>Flutter</tag>
+      </tags>
+  </entry>
+  <entry>
+    <title>Android系统进程-思维构建</title>
+    <url>/2024/08/26/Android%E7%B3%BB%E7%BB%9F%E8%BF%9B%E7%A8%8B-%E6%80%9D%E7%BB%B4%E6%9E%84%E5%BB%BA/</url>
+    <content><![CDATA[init进程概述init进程并非鼻祖进程, 真正的鼻祖是进程id为0的 swapper进程(idele进程).
+init的进程(pid&#x3D;1), 是Android用户空间所有进程的鼻祖, 还有一个兄弟进程kthread进程(pid&#x3D;2), 是Android内核空间所有进程的鼻祖.
+init会 fork&#x2F;clone 多个子进程, vold\adbd\lmkd\logd\surfaceflinger\servicemanager\zygote(systemserver(AMS&#x2F;WMS&#x2F;PMS)&#x2F;launcher&#x2F;phone&#x2F;camera)
+surfaceflinger进程作用是：把多个来源的图像数据，如需合成则进行合成 否则直接提交给display驱动进行显示
+
+lmkd进程 Low Memory Killer Daemon低内存杀手守护进程, 查杀进程的。会监控内存的使用情况，当达到一定阀值的时候，会去杀掉一些处于后台的、优先级低的、占用内存高的进程, 是一个守护进程，会在后台默默的为内存的健康保驾护航.
+
+logdlog功能
+
+servicemanager进程为binder通信服务的，负责整个Android系统的binder通信 ，所以 需要提前启动
+
+zygote进程init进程直接创建的子进程中唯一可以运行java代码的进程
+
+进程启动选用脚本语言定义创建子进程以及顺序,后缀.rc, 可定义子进程基础信息、触发条件、前置命令、创建命令，需要用init脚本语言来配置创建子进程的步骤如下1. 首先 子进程在以.rc的脚本文件中，使用service关键字来配置子进程相关的信息2. 其次 在init.rc文件中（init.rc文件到底是在哪个目录这个是不确定的）使用import关键字引入脚本文件，使用on关键字来配置子进程的触发条件，3. 触发条件配置完毕后，如若子进程在创建之前需要配置一些前置操作或命令，则基于触发条件下配置这些信息4. 最后 使用start关键字来配置创建子进程的命令。子进程的基础信息会被解析到Service实例中，所有的Service实例会存放到ServiceList对象中。触发条件和它包含的命令会被解析到Action实例中，所有的Action实例会存放到ActionManager对象中.
+
+小计子进程的善后都需要创建进程的处理,1. 首先我先使用sigaction函数来注册SIGCHLD信号，这样就可以监听到子进程的状态了2. 其次使用signalfd函数为SIGCHLD信号生成一个fd（文件描述符）3. 再次使用epoll来见监听上一步生成的fd是否有可读数据4. 如监听到fd上有可读数据，则证明子进程的状态发生了变化，还需要使用waitpid函数来获取是哪个子进程死掉了
+
+servicemanagerzygotesystemserver进程ActivityManagerServiceWindowManagerServiceInputManagerServicePackageManagerServicesurfaceflinger进程四大组件binderhandler窗口ui绘制事件分发类加载机制]]></content>
+      <categories>
+        <category>Android</category>
+      </categories>
+      <tags>
+        <tag>Android</tag>
+      </tags>
+  </entry>
+  <entry>
+    <title>内存泄漏/内存溢出</title>
+    <url>/2024/11/15/%E5%86%85%E5%AD%98%E6%B3%84%E6%BC%8F-%E5%86%85%E5%AD%98%E6%BA%A2%E5%87%BA/</url>
+    <content><![CDATA[一、内存泄漏 &amp; 内存溢出​	在软件开发与运行过程中，内存管理是一个至关重要的环节。然而，由于各种原因，如程序设计的缺陷或资源管理的不当，可能会导致两种常见的内存问题：内存泄漏（Memory Leak）和内存溢出（Memory Overflow）。各种语言&#x2F;操作系统上预防和解决也有不同方式方案,以下是关于两者概念的详细介绍：
+内存泄漏:​	内存泄漏指程序中已经不再需要使用的内存没有被释放，从而造成内存资源浪费和程序性能下降。其特征是程序使用内存总量持续增加，直到程序崩溃或者系统强制关闭。
+原因：
+
+资源未被正确释放：程序动态分配了内存资源，但没有及时释放，导致内存泄漏。
+垃圾回收机制失效：在使用Java等高级语言编写的程序中，垃圾回收机制负责自动释放不再使用的内存资源。但如果程序员在编写代码时存在逻辑错误，就有可能导致垃圾回收机制失效，进而导致内存泄漏。
+循环引用：在使用面向对象编程语言时，两个对象之间可能会发生相互引用的情况。如果这种引用形成了一个环路，就会导致这些对象永远无法被释放，从而产生内存泄漏。
+
+影响：
+
+系统崩溃：内存泄漏会导致系统可用内存不足，从而造成系统崩溃或者异常退出。
+程序性能下降：内存泄漏会让程序占用更多的内存，导致程序性能下降，响应速度变慢。
+安全问题：黑客可能会利用内存泄漏漏洞实现攻击，比如利用堆栈溢出漏洞进行缓冲区溢出攻击。
+
+检测与避免方法：
+
+使用内存监控工具：Windows Task Manager、Linux top命令、ValgrindAndroid Liko KOOM Leakcanary
+代码审查：通过仔细阅读代码，找出可能导致内存泄漏的逻辑错误，发现和解决问题。
+显式地释放资源：在程序中动态分配了内存后，一定要在不再需要使用这些资源时显式地释放它们。例如，在C语言中使用free函数进行内存释放。
+使用智能指针：C++等语言中提供了智能指针的概念，可以自动管理内存，避免手动释放资源时遗漏。
+避免循环引用：在使用面向对象编程时，尽量避免对象之间相互引用形成环路的情况。如果无法避免，可以使用弱引用等技术来解决。
+
+内存溢出:​	内存溢出是指程序在申请内存时，所需的内存空间超过了系统所分配的内存空间，使得程序无法正常运行.
+原因：
+
+分配的内存过于庞大，在内存池中没有足够的连续空间满足需求。
+内存泄漏：应用程序持续向系统申请内存空间，但没有及时释放，导致内存池被消耗殆尽。
+代码编写问题：如未正确释放已经申请的内存、指针操作错误等。
+操作系统本身限制了进程所能申请的最大内存。
+
+影响：
+​	内存溢出会导致程序崩溃或者无法正常运行，因为它直接涉及到程序的运行空间不足。
+解决办法：
+
+优化代码：避免出现无效的内存分配和内存泄漏。
+使用内存池技术：尽可能地重复利用已经申请的内存空间。
+增大操作系统对程序可用的最大内存限制（前提是操作系统支持）。
+将需要处理的数据划分为更小的块，分批进行处理，这样可以使每个块需要分配的内存量变小。
+
+二、关联&#x2F;区别关系:
+​	内存泄漏会造成内存溢出, 内存泄漏是指程序在申请内存后，无法释放已申请的内存空间，一次内存泄漏危害可以忽略，但内存泄漏堆积起来后果很严重，无论多少内存，迟早会被占光，最终会导致内存溢出。
+区别:
+
+发生时机：内存溢出通常发生在程序运行时，当数据结构的大小超过预设限制或者递归调用栈过深时，就会发生内存溢出。而内存泄漏则是在程序持续运行过程中逐渐累积的，当不再使用的内存没有及时释放时，就会产生泄漏。
+表现方式: 内存溢出会导致程序崩溃或者无法正常运行，因为它直接涉及到程序的运行空间不足。而内存泄漏在初期可能不会对程序产生明显影响，但随着时间的推移，未释放的内存不断累积，最终会导致系统资源耗尽，程序性能下降。
+解决方案: 对于内存溢出，解决方法通常涉及到优化数据结构和算法，减少内存消耗，或者增加系统可用内存。而解决内存泄漏则需要定位泄漏源头，修复代码中的内存管理问题，确保不再使用的内存能够被及时释放。
+
+三、Android内存泄漏场景:1. 非静态内部类&#x2F;匿名内部类造成原因：非静态内部类默认会持有外部类的引用，如果内部类的生命周期超过了外部类，就会造成内存泄漏。
+场景：当Activity销毁后，由于内部类中存在异步耗时任务还在执行，导致Activity实例一直被内部类持有无法被回收，造成内存泄漏。
+public class TestActivity extends AppCompatActivity &#123;    @Override    protected void onCreate(Bundle savedInstanceState) &#123; 		// ... ...                Button.setOnClickListener(new View.OnClickListener() &#123;            @Override            public void onClick(View view) &#123;                new Thread(new Runnable() &#123;                    @Override                    public void run() &#123;                        try &#123;                            // 模拟耗时操作                            Thread.sleep(1000);                        &#125; catch (InterruptedException e) &#123;                            throw new RuntimeException(e);                        &#125;                    &#125;                &#125;).start();            &#125;        &#125;);    &#125;&#125;
+
+解决办法：使用静态内部类，并通过弱引用的方式持有外部类。
+public class TestActivity extends AppCompatActivity &#123;    @Override    protected void onCreate(Bundle savedInstanceState) &#123;        super.onCreate(savedInstanceState);        setContentView(R.layout.activity_test);        Button button = findViewById(R.id.button);        button.setOnClickListener(new View.OnClickListener() &#123;            @Override            public void onClick(View view) &#123;                new Thread(new MyRunnable()).start();            &#125;        &#125;);    &#125;    static class MyRunnable implements Runnable &#123;        @Override        public void run() &#123;            try &#123;                // 模拟耗时操作                Thread.sleep(1000);            &#125; catch (InterruptedException e) &#123;                throw new RuntimeException(e);            &#125;        &#125;    &#125;&#125;
+
+2. 静态成员变量造成的内存泄漏造成原因：静态成员变量的生命周期等于应用程序的生命周期，如果该静态成员引用的变量生命周期小于该静态变量，就会造成内存泄漏。
+场景：静态成员变量持有了一个耗费资源过多的实例（如Activity、Fragment）。
+public class Person &#123;    private static Activity mActivity;    Person(Activity activity) &#123;        mActivity = activity;    &#125;&#125;
+
+解决办法：尽量避免使用Static成员变量引用资源耗费过多的实例，如果必须使用，可以使用Application的Context。这样可以随着应用生命周期创建销毁.
+3. 单例模式造成的内存泄漏造成原因：单例模式由于其具有静态特性，导致其生命周期等于应用程序生命周期，如果单例中持有别的类的实例，就会造成内存泄漏。
+场景：单例模式中持有一个耗费资源过多的实例（如Context）。
+public class SingleInstance &#123;    private static SingleInstance instance;    private Context mContext;    private SingleInstance(Context context) &#123;        this.mContext = context; // 传递的是Activity的context    &#125;    public static SingleInstance getInstance(Context context) &#123;        if (instance == null) &#123;            instance = new SingleInstance(context);        &#125;        return instance;    &#125;&#125;
+
+解决办法：使用Application的Context代替Activity的Context。
+4. Handler造成的内存泄漏造成原因：Handler会持有外部类的对象（如Activity），如果Handler中还有消息没执行完，此时创建Handler的Activity关闭就会造成内存泄漏。
+场景：Activity中通过一个子线程异步请求网络数据，请求成功后更新当前页面。
+public class MainActivity extends AppCompatActivity &#123;    private Handler mHandler = new Handler(Looper.getMainLooper()) &#123;        @Override        public void handleMessage(Message msg) &#123;            // 更新页面        &#125;    &#125;;    // 成功获取到网络数据后更新页面    private void handleData(String data) &#123;        Message message = Message.obtain();        message.obj = data;        mHandler.sendMessage(message);    &#125;&#125;
+
+解决办法：
+
+使用静态内部类+弱引用。
+在Activity销毁时，及时清理消息队列中的消息。
+
+public class MainActivity extends AppCompatActivity &#123;    private static class MyHandler extends Handler &#123;        private final WeakReference&lt;MainActivity&gt; mActivity;        public MyHandler(MainActivity activity) &#123;            mActivity = new WeakReference&lt;&gt;(activity);        &#125;        @Override        public void handleMessage(Message msg) &#123;            MainActivity activity = mActivity.get();            if (activity != null) &#123;                // 更新页面            &#125;        &#125;    &#125;    private MyHandler mHandler;    @Override    protected void onCreate(Bundle savedInstanceState) &#123;        super.onCreate(savedInstanceState);        setContentView(R.layout.activity_main);        mHandler = new MyHandler(this);    &#125;    @Override    protected void onDestroy() &#123;        super.onDestroy();        if (mHandler != null) &#123;            mHandler.removeCallbacksAndMessages(null);        &#125;    &#125;&#125;
+
+5. 资源性对象未关闭造成的内存泄漏造成原因：对于资源性对象（如BroadcastReceiver、EventBus等），在不再使用时，应该立即调用其close()函数将其关闭，然后再置为null。否则会造成内存泄漏。
+场景：Activity中注册了BroadcastReceiver，但在onDestroy方法中没有注销该接收器。
+public class MainActivity extends AppCompatActivity &#123;    private MyReceiver myReceiver;    @Override    protected void onCreate(Bundle savedInstanceState) &#123;        super.onCreate(savedInstanceState);        setContentView(R.layout.activity_main);        myReceiver = new MyReceiver();        registerReceiver(myReceiver, new IntentFilter(&quot;MY_ACTION&quot;));    &#125;    // 假设未重写onDestroy方法&#125;class MyReceiver extends BroadcastReceiver &#123;    @Override    public void onReceive(Context context, Intent intent) &#123;        // 处理广播    &#125;&#125;
+
+解决办法：在onDestroy方法中注销广播接收器。
+@Overrideprotected void onDestroy() &#123;    super.onDestroy();    unregisterReceiver(myReceiver); // 解除注册&#125;
+
+6. 容器中的对象未清理造成的内存泄漏造成原因：在使用集合类（如ArrayList、HashMap等）时，如果集合中的对象不再使用，但没有及时从集合中移除，就会导致这些对象无法被垃圾回收器回收，从而造成内存泄漏。
+场景：在Activity中创建了一个ArrayList来存储一些对象，但在Activity销毁时，没有清空这个ArrayList。
+解决办法：在Activity销毁时，清空集合中的对象，并将其置为null。
+@Overrideprotected void onDestroy() &#123;    super.onDestroy();    if (myList != null) &#123;        myList.clear();        myList = null;    &#125;&#125;
+
+Liko在 OOM 和内存触顶时通过用户无感知 dump 来获取 HPROF 文件，当 App 退出到后台且内存 充足的情况进行分析，裁剪 HPROF 回传进行分析
+KOOM利用系统内核COW(Copy-on-write，写时复制)机制，每次dump内存镜像前先暂停虚拟机，然后fork子进程来执行dump操作，父进程在fork成功后立刻恢复虚拟机运行，整个过程对于父进程来讲总耗时只有几毫秒。内存镜像于闲时进行独立进程单线程本地分析，分析完即删除。
+LeakCanary原理分析
+分为以下几步：
+
+监测Activity 的生命周期的 onDestroy() 的调用。
+当某个 Activity 的 onDestroy() 调用后，便对这个 activity 创建一个带 ReferenceQueue 的弱引用，并且给这个弱引用创建了一个 key 保存在 Set集合 中。
+如果这个 activity 可以被回收，那么弱引用就会被添加到 ReferenceQueue 中。
+等待主线程进入 idle(即空闲)后，通过一次遍历，在 ReferenceQueue 中的弱引用所对应的 key 将从 retainedKeys 中移除，说明其没有内存泄漏。
+如果 activity 没有被回收，先强制进行一次 gc，再来检查，如果 key 还存在 retainedKeys 中，说明 activity 不可回收，同时也说明了出现了内存泄漏。
+发生内存泄露之后，dump内存快照，分析 hprof 文件，找到泄露路径（使用 haha 库分析），发送到通知栏
+
+]]></content>
+  </entry>
+  <entry>
+    <title>Flutter 记录</title>
+    <url>/2023/06/25/Flutter-%E8%AE%B0%E5%BD%95/</url>
+    <content><![CDATA[check 环境
+flutter doctor
+
+同意 Android 协议
+flutter doctor --android-licenses]]></content>
+      <categories>
+        <category>Flutter</category>
+      </categories>
+      <tags>
+        <tag>Flutter</tag>
+      </tags>
+  </entry>
+  <entry>
+    <title>Android Scrcpy Frp 远程操控/调试Android手机</title>
+    <url>/2023/06/25/Android-Scrcpy-Frp-%E8%BF%9C%E7%A8%8B%E6%93%8D%E6%8E%A7-%E8%B0%83%E8%AF%95Android%E6%89%8B%E6%9C%BA/</url>
+    <content><![CDATA[1. 安装msys2https://www.msys2.org/2. 安装环境参考文档https://blog.csdn.net/u012787710/article/details/130430216pacman -S mingw-w64-x86_64-SDL2pacman -S mingw-w64-x86_64-ffmpegpacman -S mingw-w64-x86_64-libusbpacman -S mingw-w64-x86_64-makepacman -S mingw-w64-x86_64-pkg-configpacman -S mingw-w64-x86_64-meson3.pwdgit clone https://github.com/Genymobile/scrcpy.git4.# 进入代码仓cd./ scrcpy/# 编译scrcpy-server 如果慢 跳过 下载编译好的 https://github.com/Genymobile/scrcpy/releases/tag/v2.0./server/scripts/build-wrapper.sh &quot;server&quot; &quot;server/scrcpy-server&quot; &quot;release&quot;# 我放入了 scrcpy-server	scrcpy\server\scrcpy-server# 编译Scrcpy.exemeson x --buildtype release --strip -Db_lto=true -Dprebuilt_server=./server/scrcpy-server-v2.0ninja.exe -Cx./run x---&gt;ERROR: Command not found: [adb], [start-server]---&gt;解: 放入代码仓根目录 adb.exe AdbWinApi.dll AdbWinUsbApi.dll]]></content>
+      <categories>
+        <category>Android</category>
+      </categories>
+      <tags>
+        <tag>Android</tag>
+        <tag>Debug</tag>
+      </tags>
+  </entry>
+  <entry>
+    <title>思考-写怎样的代码看着舒服(Java/Kotlin)</title>
+    <url>/2023/08/31/%E6%80%9D%E8%80%83-%E5%86%99%E6%80%8E%E6%A0%B7%E7%9A%84%E4%BB%A3%E7%A0%81%E7%9C%8B%E7%9D%80%E8%88%92%E6%9C%8D/</url>
+    <content><![CDATA[看整齐条理的类文件代码 真的会少几条皱纹 
+在想写怎么样的代码会舒服
+深思熟虑问过各家AI后进行整合编码约定
+目前对应代码量比较多的是Java\Kotlin, 算是阅读量和编写量最多的语言, 汇总如下
+Java Class Layout属性变量
+
+静态&#x2F;常量变量
+私有&#x2F;公共成员变量（非静态变量）构造
+构造方法方法
+单例方法（如果有）
+公共&#x2F;私有方法(非静态)
+静态方法内部类
+静态&#x2F;内部类（如果有）
+
+Kotlin Class Layout
+https://kotlinlang.org/docs/coding-conventions.html#class-layout
+
+
+Property declarations and initializer blocks属性声明和初始值设定项块
+Secondary constructors辅助构造函数
+Method declarations方法声明
+Companion object伴随对象
+
+]]></content>
+  </entry>
+  <entry>
+    <title>Hello World</title>
+    <url>/2023/06/25/hello-world/</url>
+    <content><![CDATA[Welcome to Hexo! This is your very first post. Check documentation for more info. If you get any problems when using Hexo, you can find the answer in troubleshooting or you can ask me on GitHub.
+Quick StartCreate a new post$ hexo new &quot;My New Post&quot;
+
+More info: Writing
+Run server$ hexo server
+
+More info: Server
+Generate static files$ hexo generate
+
+More info: Generating
+Deploy to remote sites$ hexo deploy
+
+More info: Deployment
 ]]></content>
   </entry>
   <entry>
@@ -1758,50 +2067,18 @@ SM9SM9 主要用于用户的身份认证。SM9 算法不需要申请数字证书
 ]]></content>
   </entry>
   <entry>
-    <title>Kotlin Exception Handling</title>
-    <url>/2023/08/08/Kotlin-Exception-Handling/</url>
-    <content><![CDATA[1. 普通处理异常
-这种是普通的写法，明了的处理异常Kotlin也支持多个catch捕获
-
-try &#123;    throw Throwable(&quot;Diy Exception&quot;)&#125;catch (e: Exception) &#123;    print(&quot;Exception-&gt; $&#123;e.message&#125;&quot;)&#125;finally &#123;    print(&quot;finally&quot;)&#125;
-
-2. inline模式处理异常
-封装处理不会导致程序异常终止, 易于使用, 提供代码质量和开发效率吐槽一点 kotlin 不支持异常检查很不好, 需要人去识别可能出现的各种异常, 在对接各类功能接口很容易被忽略异常
-
-fun main() &#123;    var p = Person()    p.name = null    nameCatch(action = &#123;        val n: String = p.name ?: fail(&quot;name is null&quot;)    &#125;, exceptionFinally = &#123;        print(&quot;exceptionFinally&quot;)    &#125;)    print(&quot;================&quot;)    print(5)    print(&quot;================&quot;)&#125;inline fun nameCatch(action: () -&gt; Unit, exceptionFinally: () -&gt; Unit) &#123;    try &#123;        action()    &#125; catch (e: Exception) &#123;        print(&quot;inline try catch -&gt; $&#123;e.message&#125;&quot;)    &#125; finally &#123;        exceptionFinally()    &#125;&#125;]]></content>
-      <categories>
-        <category>Kotlin</category>
-      </categories>
-      <tags>
-        <tag>Kotlin</tag>
-      </tags>
-  </entry>
-  <entry>
-    <title>思考-写怎样的代码看着舒服(Java/Kotlin)</title>
-    <url>/2023/08/31/%E6%80%9D%E8%80%83-%E5%86%99%E6%80%8E%E6%A0%B7%E7%9A%84%E4%BB%A3%E7%A0%81%E7%9C%8B%E7%9D%80%E8%88%92%E6%9C%8D/</url>
-    <content><![CDATA[看整齐条理的类文件代码 真的会少几条皱纹 
-在想写怎么样的代码会舒服
-深思熟虑问过各家AI后进行整合编码约定
-目前对应代码量比较多的是Java\Kotlin, 算是阅读量和编写量最多的语言, 汇总如下
-Java Class Layout属性变量
-
-静态&#x2F;常量变量
-私有&#x2F;公共成员变量（非静态变量）构造
-构造方法方法
-单例方法（如果有）
-公共&#x2F;私有方法(非静态)
-静态方法内部类
-静态&#x2F;内部类（如果有）
-
-Kotlin Class Layout
-https://kotlinlang.org/docs/coding-conventions.html#class-layout
-
-
-Property declarations and initializer blocks属性声明和初始值设定项块
-Secondary constructors辅助构造函数
-Method declarations方法声明
-Companion object伴随对象
-
+    <title>并行&amp;并发 静心理解</title>
+    <url>/2024/08/23/%E5%B9%B6%E8%A1%8C-%E5%B9%B6%E5%8F%91-%E9%9D%99%E5%BF%83%E7%90%86%E8%A7%A3/</url>
+    <content><![CDATA[并行 &amp; 并发并行 ： 并行是指多个任务或者操作再同一时间点上同时执行.(前提是在支持多处理器机器及调度系统上)
+并发 ： 并发是指多个任务或操作在同一时间段内交替执行, 快速地在多个任务之间切换, 看起来像是同时进行的.
+并行 更依赖硬件TAG: 物理分离, 资源独立
+在每个核上独立执行一个任务, 更依赖硬件
+并发 更依赖系统TAG: 资源共享, 时间片, 上下文切换
+操作系统通过时间分片实现并发, 快速的在多个任务之间切换, 每个任务获得一小段CPU时间.  
+从物理层面了解并行: 多个任务在物理上同时进行, 需要多个处理器或多核处理器来实现
+并发: 多个任务在逻辑上同时进行, 实际是在单个处理器上通过快速切换来实现
+问题并行: 包括负载均衡、通信开销、数据一致性等。需要处理任务之间的同步和通信问题。此外，并行程序可能受到资源限制（如内存带宽、网络延迟等）的影响，导致性能不如预期。
+并发: 包括死锁、竞态条件、资源同步等。可以提高程序的响应性和吞吐量，但过多的上下文切换会增加系统开销，降低整体性能。
 ]]></content>
   </entry>
 </search>
